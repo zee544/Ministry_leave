@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Hide scrollbar for Chrome, Safari, Edge */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* Hide scrollbar for Firefox */
+.no-scrollbar {
+    -ms-overflow-style: none;   /* IE / old Edge */
+    scrollbar-width: none;      /* Firefox */
+}
+
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: #f9fafb;      
+  color: #111827;                
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.dark body {
+  background-color: #111827;      
+  color: #f9fafb;                 
+}
