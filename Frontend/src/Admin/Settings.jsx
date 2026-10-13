@@ -1,3 +1,4 @@
+import { apiUrl } from "../api.js";
 import { useState, useEffect } from "react";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
@@ -44,7 +45,7 @@ function Settings() {
       try {
         const token = localStorage.getItem("token");
 
-        const profileRes = await fetch("/api/auth/profile", {
+        const profileRes = await fetch(apiUrl("/api/auth/profile"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (profileRes.ok) {
@@ -57,7 +58,7 @@ function Settings() {
           });
         }
 
-        const hodRes = await fetch("/api/auth/hod-info", {
+        const hodRes = await fetch(apiUrl("/api/auth/hod-info"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (hodRes.ok) {
@@ -113,7 +114,7 @@ function Settings() {
     setSavingProfile(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/profile", {
+      const res = await fetch(apiUrl("/api/auth/profile"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -145,7 +146,7 @@ function Settings() {
     try {
       const token = localStorage.getItem("token");
       const signature = getSignature("admin");
-      const res = await fetch("/api/auth/signature", {
+      const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -208,7 +209,7 @@ function Settings() {
     setIsSubmittingPassword(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/change-password", {
+      const res = await fetch(apiUrl("/api/auth/change-password"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

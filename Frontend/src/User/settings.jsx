@@ -2,7 +2,7 @@ import { useState } from "react";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
-
+import { apiUrl } from "../api.js";
 function Settings() {
   const { currentUser } = useUser();
   const { getSignature } = useSignatures();
@@ -30,7 +30,7 @@ function Settings() {
 
       const signature = getSignature(currentUser.name);
 
-      const res = await fetch("/api/auth/signature", {
+      const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -114,7 +114,7 @@ function Settings() {
         return;
       }
 
-      const res = await fetch("/api/auth/change-password", {
+      const res = await fetch(apiUrl("/api/auth/change-password"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

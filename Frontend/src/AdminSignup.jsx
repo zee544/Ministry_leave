@@ -1,3 +1,4 @@
+import { apiUrl } from "./api";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { MINISTRY_DIVISIONS } from "./hooks/UserContext";
@@ -21,7 +22,7 @@ function AdminSignup() {
 
   // Fetch divisions availability status
   useEffect(() => {
-    fetch("/api/auth/divisions-status")
+    fetch(apiUrl("/api/auth/divisions-status"))
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -94,7 +95,7 @@ function AdminSignup() {
       setSuccessMessage("");
 
       try {
-        const res = await fetch("/api/auth/admin-signup", {
+        const res = await fetch(apiUrl("/api/auth/admin-signup"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

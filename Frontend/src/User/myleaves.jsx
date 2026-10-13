@@ -165,6 +165,88 @@ function Myleaves() {
         }
     };
 
+    // ---- Shared status renderer (compact for mobile, full for desktop) ----
+    const renderStatus = (item, getStatusBadge, compact = false) => {
+        const size = compact
+            ? "px-2 py-0.5 text-[10px] rounded-md font-medium"
+            : "px-3 py-1 rounded-lg text-md font-medium";
+
+        if (item.status === "Admin Approved") {
+            return (
+                <span className={`${size} bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300`}>
+                    Awaiting HOD
+                </span>
+            );
+        }
+        if (item.status === "Cancelled") {
+            const reason = item.declineReason || item.decline_reason;
+            return (
+                <div className="flex flex-col gap-0.5 items-start">
+                    <span className={`${size} bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+                        Cancelled
+                    </span>
+                    {reason && (
+                        <span
+                            className="text-[10px] text-gray-600 dark:text-gray-400 italic whitespace-normal break-words leading-tight"
+                            title={reason}
+                        >
+                            Reason: "{reason}"
+                        </span>
+                    )}
+                </div>
+            );
+        }
+        if (item.status === "Declined") {
+            const by = item.declinedBy || item.declined_by || "—";
+            const reason = item.declineReason || item.decline_reason;
+            return (
+                <div className="flex flex-col gap-0.5 items-start">
+                    <span className={`${size} bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700`}>
+                        ✗ Declined By {by}
+                    </span>
+                    {reason && (
+                        <span
+                            className="text-[10px] text-red-600 dark:text-red-400 italic whitespace-normal break-words leading-tight"
+                            title={reason}
+                        >
+                            Reason: "{reason}"
+                        </span>
+                    )}
+                </div>
+            );
+        }
+        // Desktop: use DataTable's original badge
+        if (!compact && getStatusBadge) return getStatusBadge(item.status);
+
+        // Mobile fallback — same colors as desktop badges
+        if (item.status === "Approved") {
+            return (
+                <span className={`${size} bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300`}>
+                    Approved
+                </span>
+            );
+        }
+        if (item.status === "Pending") {
+            return (
+                <span className={`${size} bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300`}>
+                    Pending Admin
+                </span>
+            );
+        }
+        if (item.status === "Pending Acting Officer") {
+            return (
+                <span className={`${size} bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300`}>
+                    Pending Acting Officer
+                </span>
+            );
+        }
+        return (
+            <span className={`${size} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+                {item.status || "—"}
+            </span>
+        );
+    };
+
     const columns = [
         {
             key: "type",
@@ -189,49 +271,7 @@ function Myleaves() {
         {
             key: "status",
             label: "Status",
-            render: (item, { getStatusBadge }) => {
-                if (item.status === "Admin Approved") {
-                    return <span className="px-3 py-1 rounded-lg text-md font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">Awaiting HOD</span>;
-                }
-                if (item.status === "Cancelled") {
-                    const reason = item.declineReason || item.decline_reason;
-                    return (
-                        <div className="flex flex-col gap-1 items-start max-w-[280px]">
-                            <span className="px-3 py-1 rounded-lg text-md font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                Cancelled
-                            </span>
-                            {reason && (
-                                <span
-                                    className="text-sm text-gray-600 dark:text-gray-400 italic whitespace-normal break-words leading-snug"
-                                    title={reason}
-                                >
-                                    Reason: "{reason}"
-                                </span>
-                            )}
-                        </div>
-                    );
-                }
-                if (item.status === "Declined") {
-                    const by = item.declinedBy || item.declined_by || "—";
-                    const reason = item.declineReason || item.decline_reason;
-                    return (
-                        <div className="flex flex-col gap-1 items-start max-w-[280px]">
-                            <span className="px-3 py-1 rounded-lg text-md font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-                                ✗ Declined By {by}
-                            </span>
-                            {reason && (
-                                <span
-                                    className="text-sm text-red-600 dark:text-red-400 italic whitespace-normal break-words leading-snug"
-                                    title={reason}
-                                >
-                                    Reason: "{reason}"
-                                </span>
-                            )}
-                        </div>
-                    );
-                }
-                return getStatusBadge(item.status);
-            },
+            render: (item, ctx) => renderStatus(item, ctx?.getStatusBadge, false),
         },
         {
             key: "actions",
@@ -270,60 +310,45 @@ function Myleaves() {
         },
     ];
 
+    // ============================================================
+    // MOBILE CARD — compact: name+status on row 1, date+days row 2,
+    // buttons row 3. Status badge is small (text-[10px]).
+    // ============================================================
     const mobileRender = (leave, { getStatusBadge }) => (
-        <div className="p-4 space-y-2">
-            <div className="flex justify-between items-start">
-                <div>
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">{leave.type} Leave</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Applied: {leave.appliedOn}</p>
+        <div className="p-2.5">
+            {/* Row 1: Leave type (left) + compact status badge (right) */}
+            <div className="flex justify-between items-start gap-2 mb-1.5">
+                <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
+                        {leave.type} Leave
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        Applied: {leave.appliedOn}
+                    </p>
                 </div>
-                {leave.status === "Admin Approved" ? (
-                    <span className="px-2 py-1 rounded-lg text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">Awaiting HOD</span>
-                ) : leave.status === "Cancelled" ? (
-                    <div className="flex flex-col gap-1 items-end max-w-[220px]">
-                        <span className="px-2 py-1 rounded-lg text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                            Cancelled
-                        </span>
-                        {(leave.declineReason || leave.decline_reason) && (
-                            <span
-                                className="text-xs text-gray-600 dark:text-gray-400 italic whitespace-normal break-words leading-snug text-right"
-                                title={leave.declineReason || leave.decline_reason}
-                            >
-                                "{leave.declineReason || leave.decline_reason}"
-                            </span>
-                        )}
-                    </div>
-                ) : leave.status === "Declined" ? (
-                    <div className="flex flex-col gap-1 items-end max-w-[220px]">
-                        <span className="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-                            ✗ Declined By {leave.declinedBy || leave.declined_by || "—"}
-                        </span>
-                        {(leave.declineReason || leave.decline_reason) && (
-                            <span
-                                className="text-xs text-red-600 dark:text-red-400 italic whitespace-normal break-words leading-snug text-right"
-                                title={leave.declineReason || leave.decline_reason}
-                            >
-                                "{leave.declineReason || leave.decline_reason}"
-                            </span>
-                        )}
-                    </div>
-                ) : (
-                    getStatusBadge(leave.status)
-                )}
+                <div className="shrink-0 text-right max-w-[55%]">
+                    {renderStatus(leave, getStatusBadge, true)}
+                </div>
             </div>
-            <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-                <span>{leave.from} → {leave.to}</span>
-                <span className="font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded">
+
+            {/* Row 2: From → To (left) + Days badge (right) */}
+            <div className="flex justify-between items-center text-[11px] mb-2">
+                <span className="text-gray-700 dark:text-gray-300 truncate">
+                    {leave.from} <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span> {leave.to}
+                </span>
+                <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
                     {leave.noOfDays || leave.days ? `${leave.noOfDays || leave.days} day(s)` : ""}
                 </span>
             </div>
-            <div className="flex gap-2 pt-1">
+
+            {/* Row 3: Buttons */}
+            <div className="flex gap-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-700">
                 <button
                     onClick={() => {
                         setSelectedLeave(leave);
                         setShowPrintModal(true);
                     }}
-                    className="flex-1 px-3 py-1.5 bg-[#9D00FF] dark:bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center justify-center gap-1 shadow-sm"
+                    className="flex-1 px-2 py-1.5 bg-purple-500 text-white text-[11px] rounded-md hover:bg-purple-700 transition-colors font-medium"
                 >
                     View
                 </button>
@@ -331,13 +356,13 @@ function Myleaves() {
                     <>
                         <button
                             onClick={() => handleEdit(leave)}
-                            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+                            className="flex-1 px-2 py-1.5 bg-blue-500 text-white text-[11px] rounded-md hover:bg-blue-700 transition-colors font-medium"
                         >
                             Edit
                         </button>
                         <button
                             onClick={() => setCancelTarget(leave.id)}
-                            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-[#F62817] text-white text-xs rounded-lg hover:bg-red-700 transition-colors"
+                            className="flex-1 px-2 py-1.5 bg-red-500 text-white text-[11px] rounded-md hover:bg-red-700 transition-colors font-medium"
                         >
                             Cancel
                         </button>

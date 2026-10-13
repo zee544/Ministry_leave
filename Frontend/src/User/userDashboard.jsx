@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import UserHeader from "../Components/userHeader";
 import UserSidebar from "../Components/usersidebar";
 import ApplyLeave from "./ApplyLeave.jsx";
-import { ClipboardList, Clock, CheckCircle, Users, User,CalendarPlus, FileText} from "lucide-react";
+import { ClipboardList, Clock, CheckCircle, Users, User, CalendarPlus, FileText } from "lucide-react";
 import Profile from "./profile";
 import Myleaves from "./myleaves";
 import Settings from "./settings";
@@ -123,7 +123,7 @@ function UserDashboard() {
     setToast("Processing...");
 
     try {
-      await confirmActingOfficer(leave.id, "decline", reason); 
+      await confirmActingOfficer(leave.id, "decline", reason);
 
       const reasonText = reason ? ` Reason: ${reason}` : "";
 
@@ -212,6 +212,72 @@ function UserDashboard() {
     },
   ];
 
+  // ---- Shared compact status renderer for mobile ----
+  const renderMobileStatus = (item, getStatusBadge) => {
+    const size = "px-2 py-0.5 text-[10px] rounded-md font-medium";
+
+    if (item.status === "Admin Approved") {
+      return (
+        <span className={`${size} bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300`}>
+          Awaiting HOD
+        </span>
+      );
+    }
+    if (item.status === "Pending Acting Officer") {
+      return (
+        <span className={`${size} bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300`}>
+          Awaiting Acting Officer
+        </span>
+      );
+    }
+    if (item.status === "Declined") {
+      const by = item.declinedBy || item.declined_by || "—";
+      const reason = item.declineReason || item.decline_reason;
+      return (
+        <div className="flex flex-col gap-0.5 items-end">
+          <span className={`${size} bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700`}>
+            ✗ Declined By {by}
+          </span>
+          {reason && (
+            <span
+              className="text-[10px] text-rose-500 dark:text-rose-300 italic whitespace-normal break-words leading-tight text-right"
+              title={reason}
+            >
+              Reason: "{reason}"
+            </span>
+          )}
+        </div>
+      );
+    }
+    if (item.status === "Approved") {
+      return (
+        <span className={`${size} bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300`}>
+          Approved
+        </span>
+      );
+    }
+    if (item.status === "Pending") {
+      return (
+        <span className={`${size} bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300`}>
+          Pending
+        </span>
+      );
+    }
+    if (item.status === "Cancelled") {
+      return (
+        <span className={`${size} bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+          Cancelled
+        </span>
+      );
+    }
+    if (getStatusBadge) return getStatusBadge(item.status);
+    return (
+      <span className={`${size} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+        {item.status || "—"}
+      </span>
+    );
+  };
+
   const dashboardColumns = [
     {
       key: "type",
@@ -233,7 +299,7 @@ function UserDashboard() {
     },
     { key: "appliedOn", label: "Applied On", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.appliedOn}</span> },
     { key: "actingOfficer", label: "Acting Officer", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.actingOfficer}</span> },
-        {
+    {
       key: "status",
       label: "Status",
       className: "min-w-[220px]",
@@ -252,7 +318,7 @@ function UserDashboard() {
             </span>
           );
         }
-               if (item.status === "Declined") {
+        if (item.status === "Declined") {
           const by = item.declinedBy || item.declined_by || "—";
           const reason = item.declineReason || item.decline_reason;
           return (
@@ -261,13 +327,13 @@ function UserDashboard() {
                 ✗ Declined By {by}
               </span>
               {reason && (
-  <span
-    className="text-sm text-rose-400 dark:text-rose-300 italic whitespace-normal break-words leading-snug"
-    title={reason}
-  >
-    <strong className="font-bold not-italic">Reason:</strong> "{reason}"
-  </span>
-)}
+                <span
+                  className="text-sm text-rose-400 dark:text-rose-300 italic whitespace-normal break-words leading-snug"
+                  title={reason}
+                >
+                  <strong className="font-bold not-italic">Reason:</strong> "{reason}"
+                </span>
+              )}
             </div>
           );
         }
@@ -294,50 +360,47 @@ function UserDashboard() {
     },
   ];
 
+  // ============================================================
+  // COMPACT MOBILE RENDER — My Recent Leaves
+  // Row 1: Type + Applied  |  Status badge
+  // Row 2: From → To       |  Days badge
+  // Row 3: View Form button
+  // ============================================================
   const dashboardMobileRender = (leave, { getStatusBadge }) => (
-    <div className="p-4 space-y-2">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-800 dark:text-white">
+    <div className="p-2.5">
+      {/* Row 1 */}
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
             {leave.type} Leave
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Applied: {leave.appliedOn}</p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+            Applied: {leave.appliedOn}
+          </p>
         </div>
-               {leave.status === "Declined" ? (
-          <div className="flex flex-col gap-1 items-end max-w-[220px]">
-            <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-              ✗ Declined By {leave.declinedBy || leave.declined_by || "—"}
-            </span>
-            {(leave.declineReason || leave.decline_reason) && (
-              <span
-                className="text-xs text-red-600 dark:text-red-400 italic whitespace-normal break-words leading-snug text-right"
-                title={leave.declineReason || leave.decline_reason}
-              >
-                "{leave.declineReason || leave.decline_reason}"
-              </span>
-            )}
-          </div>
-        ) : (
-          getStatusBadge(leave.status)
-        )}
+        <div className="shrink-0 max-w-[55%] text-right">
+          {renderMobileStatus(leave, getStatusBadge)}
+        </div>
       </div>
-      <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          {leave.from} → {leave.to}
+
+      {/* Row 2 */}
+      <div className="flex justify-between items-center text-[11px] mb-2">
+        <span className="text-gray-700 dark:text-gray-300 truncate">
+          {leave.from} <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span> {leave.to}
         </span>
-        <span className="font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded">
-          {leave.noOfDays || leave.days
-            ? `${leave.noOfDays || leave.days} day(s)`
-            : ""}
+        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
+          {leave.noOfDays || leave.days ? `${leave.noOfDays || leave.days} day(s)` : ""}
         </span>
       </div>
-      <div className="pt-1">
+
+      {/* Row 3 */}
+      <div className="pt-1.5 border-t border-gray-100 dark:border-gray-700">
         <button
           onClick={() => {
             setSelectedLeave(leave);
             setShowPrintModal(true);
           }}
-          className="w-full py-1.5 bg-purple-500 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-1 shadow-sm"
+          className="w-full py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm"
         >
           View Form
         </button>
@@ -436,50 +499,47 @@ function UserDashboard() {
     },
   ];
 
+  // ============================================================
+  // COMPACT MOBILE RENDER — Pending Acting Approvals
+  // Row 1: Name + Division·Type  |  Status badge
+  // Row 2: From → To             |  Days badge
+  // Row 3: Buttons (View / Confirm / Decline)
+  // ============================================================
   const actingDashboardMobileRender = (request, { getStatusBadge }) => (
-    <div className="p-4 space-y-2">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-800 dark:text-white">
+    <div className="p-2.5">
+      {/* Row 1 */}
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
             {request.employee}
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
             {request.division} · {request.type}
           </p>
         </div>
-        {request.status === "Pending Acting Officer" ? (
-          <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-            Awaiting Confirmation
-          </span>
-        ) : request.status === "Admin Approved" ? (
-          <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">
-            Awaiting HOD
-          </span>
-        ) : request.status === "Declined" ? (
-          <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-            ✗ Declined By {request.declinedBy || request.declined_by || "—"}
-          </span>
-        ) : (
-          getStatusBadge(request.status)
-        )}
+        <div className="shrink-0 max-w-[55%] text-right">
+          {renderMobileStatus(request, getStatusBadge)}
+        </div>
       </div>
-      <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          {request.from} → {request.to}
+
+      {/* Row 2 */}
+      <div className="flex justify-between items-center text-[11px] mb-2">
+        <span className="text-gray-700 dark:text-gray-300 truncate">
+          {request.from} <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span> {request.to}
         </span>
-        <span className="font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded">
-          {request.noOfDays || request.days
-            ? `${request.noOfDays || request.days} day(s)`
-            : ""}
+        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
+          {request.noOfDays || request.days ? `${request.noOfDays || request.days} day(s)` : ""}
         </span>
       </div>
-      <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2">
+
+      {/* Row 3: buttons */}
+      <div className="pt-1.5 border-t border-gray-100 dark:border-gray-700 flex items-center gap-1.5">
         <button
           onClick={() => {
             setSelectedLeave(request);
             setShowPrintModal(true);
           }}
-          className="px-3 py-1.5 bg-purple-500 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+          className="flex-1 px-2 py-1.5 bg-purple-500 text-white text-[10px] font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm"
           disabled={loading}
         >
           View Form
@@ -488,14 +548,14 @@ function UserDashboard() {
           <>
             <button
               onClick={() => askConfirm(request)}
-              className="flex-1 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-green-500 text-white text-[10px] font-medium rounded-md hover:bg-green-700 transition-colors shadow-sm"
               disabled={loading}
             >
               Confirm
             </button>
             <button
               onClick={() => askDecline(request)}
-              className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-red-500 text-white text-[10px] font-medium rounded-md hover:bg-red-700 transition-colors shadow-sm"
               disabled={loading}
             >
               Decline
@@ -589,8 +649,8 @@ function UserDashboard() {
                     className="p-3 lg:p-4 bg-teal-50 dark:bg-teal-900/30 rounded-xl text-center hover:bg-teal-100 dark:hover:bg-teal-900/50 hover:shadow-lg transition-all"
                   >
                     <div className="flex justify-center items-center">
-  <CalendarPlus className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-teal-600 dark:text-teal-300" />
-</div>
+                      <CalendarPlus className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-teal-600 dark:text-teal-300" />
+                    </div>
                     <span className="text-xs lg:text-sm font-medium text-teal-700 dark:text-teal-300">
                       Apply Leave
                     </span>
@@ -600,8 +660,8 @@ function UserDashboard() {
                     className="p-3 lg:p-4 bg-blue-50 dark:bg-blue-900/30 rounded-xl text-center hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:shadow-lg transition-all"
                   >
                     <div className="flex justify-center items-center">
-  <FileText className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-blue-600 dark:text-blue-300" />
-</div>
+                      <FileText className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-blue-600 dark:text-blue-300" />
+                    </div>
                     <span className="text-xs lg:text-sm font-medium text-blue-700 dark:text-blue-300">
                       My Leaves
                     </span>
@@ -611,8 +671,8 @@ function UserDashboard() {
                     className="p-3 lg:p-4 bg-purple-50 dark:bg-purple-900/30 rounded-xl text-center hover:bg-purple-100 dark:hover:bg-purple-900/50 hover:shadow-lg transition-all"
                   >
                     <div className="flex justify-center items-center">
-  <User className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-purple-600 dark:text-purple-300" />
-</div>
+                      <User className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-purple-600 dark:text-purple-300" />
+                    </div>
                     <span className="text-xs lg:text-sm font-medium text-purple-700 dark:text-purple-300">
                       My Profile
                     </span>
@@ -622,8 +682,8 @@ function UserDashboard() {
                     className="p-3 lg:p-4 bg-cyan-50 dark:bg-cyan-900/30 rounded-xl text-center hover:bg-cyan-100 dark:hover:bg-cyan-900/50 hover:shadow-lg transition-all"
                   >
                     <div className="flex justify-center items-center">
-  <Users className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-cyan-600 dark:text-cyan-300" />
-</div>
+                      <Users className="w-7 h-7 lg:w-9 lg:h-9 mb-1 lg:mb-2 text-cyan-600 dark:text-cyan-300" />
+                    </div>
                     <span className="text-xs lg:text-sm font-medium text-cyan-700 dark:text-cyan-300">
                       Acting Approvals
                     </span>
@@ -689,7 +749,6 @@ function UserDashboard() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden mb-6 lg:mb-8">
                 <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-amber-50/40 dark:from-amber-900/20 to-transparent">
                   <div className="flex items-center gap-2.5">
-                  
                     <div>
                       <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
                         Pending Acting Approvals
@@ -715,7 +774,6 @@ function UserDashboard() {
                 <div className="p-4">
                   {pendingConfirmations.length === 0 ? (
                     <div className="text-center py-8 text-gray-400 dark:text-gray-500">
-
                       <p className="text-sm font-medium">
                         No pending acting approvals at this time.
                       </p>

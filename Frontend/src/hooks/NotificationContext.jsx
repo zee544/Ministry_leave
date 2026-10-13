@@ -8,7 +8,7 @@ import {
   useEffect,
   useRef,
 } from "react";
-
+import { apiUrl } from "../api.js";
 const NotificationContext = createContext();
 
 export function NotificationProvider({ children }) {
@@ -17,6 +17,9 @@ export function NotificationProvider({ children }) {
   const [error, setError] = useState(null);
   const broadcastRef = useRef(null);
   const eventSourceRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const sseGenerationRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
 
   // BroadcastChannel for cross-tab updates
   useEffect(() => {
@@ -46,7 +49,7 @@ export function NotificationProvider({ children }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/notifications", {
+      const res = await fetch(apiUrl("/api/notifications"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -84,50 +87,107 @@ export function NotificationProvider({ children }) {
   const openSSEConnection = useCallback((token) => {
     if (!token) return;
 
+    const generation = ++sseGenerationRef.current;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     if (eventSourceRef.current) {
-      try { eventSourceRef.current.close(); } catch (e) {}
+      eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    const url = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
-    console.log("[SSE] Connecting to", url);
+    const scheduleReconnect = () => {
+      if (generation !== sseGenerationRef.current || reconnectTimerRef.current) return;
 
-    let es;
-    try {
-      es = new EventSource(url);
-    } catch (err) {
-      console.warn("[SSE] Failed to create EventSource:", err);
-      return;
-    }
+      const delay = Math.min(1000 * (2 ** reconnectAttemptRef.current), 30000);
+      reconnectAttemptRef.current += 1;
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (localStorage.getItem("token") === token) openSSEConnection(token);
+      }, delay);
+    };
 
-    eventSourceRef.current = es;
-
-    es.addEventListener("connected", () => {
-      console.log("[SSE]  Connected");
-    });
-
-    es.addEventListener("notification", (event) => {
+    const connect = async () => {
+      let response;
       try {
-        const notif = JSON.parse(event.data);
-        console.log("[SSE] Received notification:", notif.id);
-        setNotifications((prev) => {
-          if (prev.some((n) => n.id === notif.id)) return prev;
-          return [notif, ...prev];
+        response = await fetch(apiUrl("/api/notifications/stream-ticket"), {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
         });
       } catch (err) {
-        console.warn("[SSE] Failed to parse notification:", err);
+        if (generation === sseGenerationRef.current) {
+          console.warn("[SSE] Ticket request failed:", err.message);
+          scheduleReconnect();
+        }
+        return;
       }
-    });
 
-    es.onerror = (err) => {
-      console.warn("[SSE] Connection error (browser will auto-reconnect):", err);
+      if (generation !== sseGenerationRef.current) return;
+      if (!response.ok) {
+        console.warn(`[SSE] Ticket request failed (HTTP ${response.status}).`);
+        if (response.status !== 401) scheduleReconnect();
+        return;
+      }
+
+      let ticket;
+      try {
+        ({ ticket } = await response.json());
+      } catch (err) {
+        console.warn("[SSE] Invalid ticket response:", err.message);
+        scheduleReconnect();
+        return;
+      }
+
+      if (generation !== sseGenerationRef.current || !ticket) return;
+
+      let eventSource;
+      try {
+        eventSource = new EventSource(
+          apiUrl(`/api/notifications/stream?ticket=${encodeURIComponent(ticket)}`)
+        );
+      } catch (err) {
+        console.warn("[SSE] Failed to open the notification stream:", err.message);
+        scheduleReconnect();
+        return;
+      }
+      eventSourceRef.current = eventSource;
+
+      eventSource.addEventListener("connected", () => {
+        reconnectAttemptRef.current = 0;
+      });
+
+      eventSource.addEventListener("notification", (event) => {
+        try {
+          const notification = JSON.parse(event.data);
+          setNotifications((prev) => {
+            if (prev.some((item) => item.id === notification.id)) return prev;
+            return [notification, ...prev];
+          });
+        } catch (err) {
+          console.warn("[SSE] Failed to parse notification:", err.message);
+        }
+      });
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        if (eventSourceRef.current === eventSource) eventSourceRef.current = null;
+        scheduleReconnect();
+      };
     };
+
+    connect();
   }, []);
 
   const closeSSEConnection = useCallback(() => {
+    sseGenerationRef.current += 1;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (eventSourceRef.current) {
-      console.log("[SSE] Closing connection");
-      try { eventSourceRef.current.close(); } catch (e) {}
+      eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
   }, []);
@@ -220,7 +280,7 @@ export function NotificationProvider({ children }) {
       if (!token) return;
 
       try {
-        const res = await fetch("/api/notifications", {
+        const res = await fetch(apiUrl("/api/notifications"), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -257,7 +317,7 @@ export function NotificationProvider({ children }) {
       );
 
       try {
-        await fetch(`/api/notifications/${id}/read`, {
+        await fetch(apiUrl(`/api/notifications/${id}/read`), {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -277,7 +337,7 @@ export function NotificationProvider({ children }) {
     if (!token) return;
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     try {
-      await fetch("/api/notifications/read-all", {
+      await fetch(apiUrl("/api/notifications/read-all"), {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,

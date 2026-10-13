@@ -94,6 +94,65 @@ function LeaveApprove() {
         closeModal();
     };
 
+    // ---- Same colors as desktop table; compact size for mobile ----
+    const renderStatus = (item, getStatusBadge, compact = false) => {
+        const size = compact
+            ? "px-2 py-0.5 text-[10px] rounded-md font-medium"
+            : "px-3 py-1 rounded-lg font-medium";
+
+        if (item.status === "Admin Approved") {
+            return (
+                <span className={`${size} bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300`}>
+                    Awaiting HOD
+                </span>
+            );
+        }
+        if (item.status === "Pending") {
+            return (
+                <span className={`${size} bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300`}>
+                    Pending Admin
+                </span>
+            );
+        }
+        // Desktop: use DataTable's original badge
+        if (!compact && getStatusBadge) return getStatusBadge(item.status);
+
+        // Mobile fallback — same colors as desktop badges
+        if (item.status === "Approved") {
+            return (
+                <span className={`${size} bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300`}>
+                    Approved
+                </span>
+            );
+        }
+        if (item.status === "Declined") {
+            return (
+                <span className={`${size} bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300`}>
+                    Declined
+                </span>
+            );
+        }
+        if (item.status === "Pending Acting Officer") {
+            return (
+                <span className={`${size} bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300`}>
+                    Pending Acting Officer
+                </span>
+            );
+        }
+        if (item.status === "Cancelled") {
+            return (
+                <span className={`${size} bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+                    Cancelled
+                </span>
+            );
+        }
+        return (
+            <span className={`${size} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
+                {item.status || "—"}
+            </span>
+        );
+    };
+
     const columns = [
         { key: "employee", label: "Employee", render: (item) => <span className="text-gray-800 dark:text-white">{item.employee}</span> },
         { key: "division", label: "Division", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.division}</span> },
@@ -112,15 +171,7 @@ function LeaveApprove() {
         {
             key: "status",
             label: "Status",
-            render: (item, { getStatusBadge }) => {
-                if (item.status === "Admin Approved") {
-                    return <span className="px-3 py-1 rounded-lg font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">Awaiting HOD</span>;
-                }
-                if (item.status === "Pending") {
-                    return <span className="px-3 py-1 rounded-lg font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300">Pending Admin</span>;
-                }
-                return getStatusBadge(item.status);
-            },
+            render: (item, ctx) => renderStatus(item, ctx?.getStatusBadge, false),
         },
         {
             key: "actions",
@@ -158,27 +209,110 @@ function LeaveApprove() {
         },
     ];
 
+    // ============================================================
+    // MOBILE CARD — 4-row compact layout (matches ActingApprovals / Myleaves)
+    // ============================================================
+    const MobileLeaveCard = ({ item }) => (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2 mb-1.5">
+            {/* Row 1: Name + Days badge */}
+            <div className="flex justify-between items-center gap-2 mb-1">
+                <p className="font-semibold text-[13px] text-gray-800 dark:text-white truncate">
+                    {item.employee}
+                </p>
+                <span className="shrink-0 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">
+                    {item.noOfDays || item.days || "—"}d
+                </span>
+            </div>
+
+            {/* Row 2: Division · Type */}
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate mb-1">
+                {item.division} · {item.type}
+            </p>
+
+            {/* Row 3: From → To inline */}
+            <p className="text-[11px] text-gray-800 dark:text-gray-200 mb-1.5">
+                <span className="text-gray-500 dark:text-gray-400">From: </span>
+                <span className="font-medium">{item.from}</span>
+                <span className="text-gray-400 dark:text-gray-500 mx-1">→</span>
+                <span className="text-gray-500 dark:text-gray-400">To: </span>
+                <span className="font-medium">{item.to}</span>
+            </p>
+
+            {/* Row 4: Status badge (left) + action buttons (right) */}
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-100 dark:border-gray-700">
+                <div className="min-w-0">
+                    {renderStatus(item, null, true)}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button
+                        onClick={() => {
+                            setSelectedLeave(item);
+                            setShowPrintModal(true);
+                        }}
+                        className="px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded hover:bg-purple-700"
+                    >
+                        View
+                    </button>
+                    {item.status === "Pending" && (
+                        <>
+                            <button
+                                onClick={() => askApprove(item)}
+                                className="px-2 py-1 bg-green-500 text-white text-[10px] font-medium rounded hover:bg-green-700"
+                            >
+                                Approve
+                            </button>
+                            <button
+                                onClick={() => askDecline(item)}
+                                className="px-2 py-1 bg-red-500 text-white text-[10px] font-medium rounded hover:bg-red-700"
+                            >
+                                Decline
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div>
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-800 dark:text-white">Leave Requests</h2>
+            <div className="flex justify-between items-center mb-3 gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white">Leave Requests</h2>
                 <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold px-3 py-1 rounded-full">
                     {userDivision} Division
                 </span>
             </div>
-            <DataTable
-                columns={columns}
-                data={divisionLeaves}
-                options={{
-                    searchFields: ["employee", "division", "type"],
-                    filterConfig: [
-                        { key: "type", label: "Leave Type" },
-                        { key: "status", label: "Status" },
-                    ],
-                    itemsPerPage: 5,
-                }}
-                label="leave requests"
-            />
+
+            {/* Mobile: compact card view */}
+            <div className="block md:hidden">
+                {divisionLeaves.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <p className="text-sm font-medium">No leave requests</p>
+                        <p className="text-xs mt-1">No leave requests found for your division.</p>
+                    </div>
+                ) : (
+                    divisionLeaves.map((item) => (
+                        <MobileLeaveCard key={item.id} item={item} />
+                    ))
+                )}
+            </div>
+
+            {/* Desktop: table view */}
+            <div className="hidden md:block">
+                <DataTable
+                    columns={columns}
+                    data={divisionLeaves}
+                    options={{
+                        searchFields: ["employee", "division", "type"],
+                        filterConfig: [
+                            { key: "type", label: "Leave Type" },
+                            { key: "status", label: "Status" },
+                        ],
+                        itemsPerPage: 5,
+                    }}
+                    label="leave requests"
+                />
+            </div>
 
             {showPrintModal && selectedLeave && (
                 <LeaveApprovalModal

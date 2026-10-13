@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
-
+import { apiUrl } from "../api.js";
 const LeaveContext = createContext();
 
 const sortByAppliedDateDesc = (items) => {
@@ -47,7 +47,7 @@ export function LeaveProvider({ children }) {
         endpoint = "/api/admin/leaves/employee";
       }
 
-      const res = await fetch(endpoint, {
+      const res = await fetch(apiUrl(endpoint), {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -99,7 +99,7 @@ export function LeaveProvider({ children }) {
     if (!token) return;
 
     try {
-      const res = await fetch("/api/admin/leaves/acting-officer", {
+      const res = await fetch(apiUrl("/api/admin/leaves/acting-officer"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -183,7 +183,7 @@ export function LeaveProvider({ children }) {
 
     if (token) {
       try {
-        const response = await fetch("/api/admin/leaves", {
+        const response = await fetch(apiUrl("/api/admin/leaves"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -232,7 +232,7 @@ export function LeaveProvider({ children }) {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
 
-      const response = await fetch(`/api/admin/leaves/${id}/acting-confirm`, {
+      const response = await fetch(apiUrl(`/api/admin/leaves/${id}/acting-confirm`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -265,7 +265,7 @@ export function LeaveProvider({ children }) {
             reason: extraProps.reason || null,
           };
 
-          const res = await fetch(`/api/admin/leaves/${id}/status`, {
+          const res = await fetch(apiUrl(`/api/admin/leaves/${id}/status`), {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -290,7 +290,7 @@ export function LeaveProvider({ children }) {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
 
-      const res = await fetch(`/api/admin/leaves/${id}/hod-approve`, {
+      const res = await fetch(apiUrl(`/api/admin/leaves/${id}/hod-approve`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -326,7 +326,7 @@ export function LeaveProvider({ children }) {
       if (!token) return { success: false };
 
       try {
-        const res = await fetch(`/api/admin/leaves/${id}`, {
+        const res = await fetch(apiUrl(`/api/admin/leaves/${id}`), {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -360,13 +360,12 @@ export function LeaveProvider({ children }) {
     [fetchLeaves]
   );
 
-  // ✅ NEW: Employee cancel leave — API call + local update
   const cancelLeave = useCallback(async (id, reason = "") => {
     const token = localStorage.getItem("token");
     if (!token) return { success: false, message: "No auth token" };
 
     try {
-      const res = await fetch(`/api/admin/leaves/${id}/cancel`, {
+      const res = await fetch(apiUrl(`/api/admin/leaves/${id}/cancel`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

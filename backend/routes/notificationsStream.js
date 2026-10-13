@@ -1,9 +1,13 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 
 const clients = new Map();
+const streamTickets = new Map();
+const STREAM_TICKET_TTL_MS = 30 * 1000;
+const MAX_STREAM_TICKETS = 5000;
 
 function keyFor(user) {
   return `${user.role}:${user.division || ''}:${user.name || ''}`;
@@ -21,116 +25,98 @@ function removeClient(key, res) {
   }
 }
 
+router.post('/stream-ticket', verifyToken, (req, res) => {
+  const now = Date.now();
+  for (const [ticket, entry] of streamTickets) {
+    if (entry.expiresAt <= now) streamTickets.delete(ticket);
+  }
+
+  if (streamTickets.size >= MAX_STREAM_TICKETS) {
+    return res.status(503).json({ message: 'Notification stream is busy. Please retry.' });
+  }
+
+  const ticket = crypto.randomBytes(32).toString('base64url');
+  streamTickets.set(ticket, {
+    user: req.user,
+    expiresAt: now + STREAM_TICKET_TTL_MS,
+  });
+
+  return res.status(201).json({
+    ticket,
+    expiresInSeconds: STREAM_TICKET_TTL_MS / 1000,
+  });
+});
+
 /**
  * GET /api/notifications/stream
  * Server-Sent Events connection
  */
 router.get('/stream', (req, res) => {
-  const token = req.query.token;
+  const ticket = req.query.ticket;
 
-  if (!token) {
-    console.warn('[SSE] ❌ No token provided');
-    return res.status(401).json({
-      message: 'Token required',
-    });
+  if (typeof ticket !== 'string' || !ticket) {
+    return res.status(401).json({ message: 'A valid stream ticket is required.' });
   }
 
-  let user;
-
-  try {
-    user = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'leave_sys_123'
-    );
-  } catch (err) {
-    console.warn('[SSE] ❌ Invalid token:', err.message);
-
-    return res.status(401).json({
-      message: 'Invalid token',
-    });
+  const ticketEntry = streamTickets.get(ticket);
+  streamTickets.delete(ticket);
+  if (!ticketEntry || ticketEntry.expiresAt <= Date.now()) {
+    return res.status(401).json({ message: 'The stream ticket is invalid or expired.' });
   }
 
-  // SSE headers
-  res.statusCode = 200;
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  // Important for SSE
-  if (typeof res.flushHeaders === 'function') {
-    res.flushHeaders();
-  }
-
-  // Initial connection message
-  res.write(
-    `event: connected\ndata: ${JSON.stringify({
-      ok: true,
-    })}\n\n`
-  );
-
-  const key = keyFor(user);
-
-  if (!clients.has(key)) {
-    clients.set(key, new Set());
-  }
-
+  const key = keyFor(ticketEntry.user);
+  if (!clients.has(key)) clients.set(key, new Set());
   clients.get(key).add(res);
 
-  console.log(
-    `[SSE] ✅ Client connected: ${key} | Connections: ${
-      clients.get(key).size
-    }`
-  );
-
   let closed = false;
-
-  // Heartbeat every 20 seconds
-  const heartbeat = setInterval(() => {
-    if (closed || res.writableEnded || res.destroyed) {
-      clearInterval(heartbeat);
-      return;
-    }
-
-    try {
-      res.write(': heartbeat\n\n');
-    } catch (error) {
-      console.log('[SSE] ⚠️ Heartbeat failed');
-
-      closed = true;
-      clearInterval(heartbeat);
-      removeClient(key, res);
-
-      try {
-        res.end();
-      } catch (_) {}
-    }
-  }, 20000);
-
-  // Browser/client closed connection
+  let heartbeat;
   const cleanup = () => {
     if (closed) return;
 
     closed = true;
-
-    clearInterval(heartbeat);
+    if (heartbeat) clearInterval(heartbeat);
     removeClient(key, res);
-
-    console.log(`[SSE] 🔌 Client disconnected: ${key}`);
   };
 
-  req.on('close', cleanup);
   req.on('aborted', cleanup);
-
-  // Prevent ECONNRESET / socket errors from becoming uncaught
+  res.on('close', cleanup);
   res.on('error', (error) => {
-    console.log(
-      `[SSE] ⚠️ Response error for ${key}: ${error.code || error.message}`
-    );
-
+    console.warn(`[SSE] Response error (${error.code || 'UNKNOWN'}).`);
     cleanup();
   });
+
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  try {
+    if (!closed && !res.destroyed) {
+      res.write(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+    }
+  } catch {
+    cleanup();
+  }
+
+  if (!closed) {
+    heartbeat = setInterval(() => {
+      if (closed || res.writableEnded || res.destroyed) {
+        cleanup();
+        return;
+      }
+
+      try {
+        res.write(': heartbeat\n\n');
+      } catch {
+        cleanup();
+      }
+    }, 20000);
+  }
 });
 
 
@@ -192,8 +178,6 @@ function broadcastNotification(notification) {
     `event: notification\n` +
     `data: ${JSON.stringify(notification)}\n\n`;
 
-  let sentCount = 0;
-
   for (const client of targets) {
     try {
       if (
@@ -201,19 +185,11 @@ function broadcastNotification(notification) {
         !client.writableEnded
       ) {
         client.write(payload);
-        sentCount++;
       }
     } catch (error) {
-      console.log(
-        '[SSE] ⚠️ Failed to send notification:',
-        error.code || error.message
-      );
+      console.warn(`[SSE] Notification write failed (${error.code || 'UNKNOWN'}).`);
     }
   }
-
-  console.log(
-    `[SSE] 📢 Broadcast recipient="${recipient}" division="${division}" → ${sentCount} client(s)`
-  );
 }
 
 module.exports = {

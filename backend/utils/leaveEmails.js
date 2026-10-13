@@ -1,5 +1,19 @@
 const pool = require('../config/db');
-const { sendEmail, wrapTemplate } = require('./emailService');
+const { sendEmail, wrapTemplate, getFrontendUrl } = require('./emailService');
+
+function emailAction(path, label) {
+  const url = getFrontendUrl(path);
+  return {
+    url,
+    html: `
+      <div style="text-align:center; margin:24px 0;">
+        <a href="${url}" style="background:#2563eb; color:#fff; text-decoration:none; padding:11px 24px; border-radius:6px; font-weight:600; font-size:13px; display:inline-block;">
+          ${label}
+        </a>
+      </div>
+    `,
+  };
+}
 
 // ═══════════════════════════════════════════════
 // Helper: Look up an email address by name + division
@@ -57,14 +71,14 @@ async function findDivisionHodEmail(division) {
 async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
   const email = await findEmployeeEmail(actingOfficerName, leave.division);
   if (!email) {
-    console.warn(`[Email] Acting officer email not found for: ${actingOfficerName}`);
-    return;
+    throw new Error('Acting officer email address was not found.');
   }
+  const action = emailAction('/userdashboard?tab=actingapprovals', 'Open Acting Approvals');
 
   await sendEmail({
     to: email,
     subject: `New Acting Officer Assignment — ${leave.employee}'s ${leave.type} Leave`,
-    text: `You have been assigned as Acting Officer for ${leave.employee}'s ${leave.type} leave from ${leave.from} to ${leave.to}. Please log in to confirm or decline.`,
+    text: `You have been assigned as Acting Officer for ${leave.employee}'s ${leave.type} leave from ${leave.from} to ${leave.to}. Sign in to review and confirm or decline this assignment: ${action.url}`,
     html: wrapTemplate({
       title: 'New Acting Officer Assignment',
       accentColor: '#0f766e',
@@ -84,12 +98,7 @@ async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
           
           <p style="color: #475569; margin-top: 16px;">Please log in to the system to <strong>confirm</strong> or <strong>decline</strong> this assignment.</p>
           
-          <div style="text-align:center; margin: 24px 0;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/userdashboard?tab=actingapprovals"
-               style="background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%); color:#fff; text-decoration:none; padding:11px 24px; border-radius:6px; font-weight:600; font-size: 13px; display:inline-block; box-shadow: 0 3px 5px -1px rgba(13, 148, 136, 0.2);">
-               Open Acting Approvals
-            </a>
-          </div>
+          ${action.html}
         </div>
       `,
     }),
@@ -102,14 +111,14 @@ async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
 async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
   const email = await findDivisionAdminEmail(leave.division);
   if (!email) {
-    console.warn(`[Email] Admin email not found for division: ${leave.division}`);
-    return;
+    throw new Error('Division admin email address was not found.');
   }
+  const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
 
   await sendEmail({
     to: email,
     subject: `Leave Awaiting Your Approval — ${leave.employee}`,
-    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting your approval.`,
+    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting your approval. Sign in to review the request and choose an action: ${action.url}`,
     html: wrapTemplate({
       title: 'Leave Request Awaiting Approval',
       accentColor: '#2563eb',
@@ -127,12 +136,7 @@ async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
             <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${actingOfficerName}</td></tr>
           </table>
 
-          <div style="text-align:center; margin: 24px 0;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/Admindashboard?tab=leaves"
-               style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color:#fff; text-decoration:none; padding:11px 24px; border-radius:6px; font-weight:600; font-size: 13px; display:inline-block; box-shadow: 0 3px 5px -1px rgba(37, 99, 235, 0.2);">
-               Review in Admin Dashboard
-            </a>
-          </div>
+          ${action.html}
         </div>
       `,
     }),
@@ -144,12 +148,13 @@ async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName, reason) {
   const email = await findEmployeeEmail(leave.employee, leave.division);
-  if (!email) return;
+  if (!email) throw new Error('Employee email address was not found.');
+  const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
   await sendEmail({
     to: email,
     subject: `Your Leave Request Was Declined — ${leave.type}`,
-    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by Acting Officer ${actingOfficerName}. ${reason ? 'Reason: ' + reason : ''}`,
+    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by Acting Officer ${actingOfficerName}. ${reason ? 'Reason: ' + reason : ''} View your leave requests: ${action.url}`,
     html: wrapTemplate({
       title: 'Your Leave Was Declined',
       accentColor: '#dc2626',
@@ -166,6 +171,7 @@ async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName
           </table>
           
           <p style="color: #475569; margin-top: 16px;">You may submit a new leave application if needed.</p>
+          ${action.html}
         </div>
       `,
     }),
@@ -178,14 +184,14 @@ async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName
 async function sendHodAwaitingFinalApprovalEmail(leave) {
   const email = await findDivisionHodEmail(leave.division);
   if (!email) {
-    console.warn(`[Email] HOD email not found for division: ${leave.division}`);
-    return;
+    throw new Error('Division HOD email address was not found.');
   }
+  const action = emailAction('/hoddashboard?tab=leaves', 'Review Leave Request');
 
   await sendEmail({
     to: email,
     subject: `Leave Awaiting Final Approval — ${leave.employee}`,
-    text: `${leave.employee}'s ${leave.type} leave has been pre-approved by Admin and is awaiting your final approval.`,
+    text: `${leave.employee}'s ${leave.type} leave has been pre-approved by Admin and is awaiting your final approval. Sign in to review the request and choose an action: ${action.url}`,
     html: wrapTemplate({
       title: 'Leave Awaiting Your Final Approval',
       accentColor: '#7c3aed',
@@ -203,12 +209,7 @@ async function sendHodAwaitingFinalApprovalEmail(leave) {
             <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${leave.actingOfficer || '—'}</td></tr>
           </table>
 
-          <div style="text-align:center; margin: 24px 0;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/hoddashboard?tab=leaves"
-               style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color:#fff; text-decoration:none; padding:11px 24px; border-radius:6px; font-weight:600; font-size: 13px; display:inline-block; box-shadow: 0 3px 5px -1px rgba(124, 58, 237, 0.2);">
-               Review in HOD Dashboard
-            </a>
-          </div>
+          ${action.html}
         </div>
       `,
     }),
@@ -220,12 +221,13 @@ async function sendHodAwaitingFinalApprovalEmail(leave) {
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
   const email = await findEmployeeEmail(leave.employee, leave.division);
-  if (!email) return;
+  if (!email) throw new Error('Employee email address was not found.');
+  const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
   await sendEmail({
     to: email,
     subject: `Your Leave Request Was Declined by Admin — ${leave.type}`,
-    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by the Admin. ${reason ? 'Reason: ' + reason : ''}`,
+    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by the Admin. ${reason ? 'Reason: ' + reason : ''} View your leave requests: ${action.url}`,
     html: wrapTemplate({
       title: 'Your Leave Was Declined by Admin',
       accentColor: '#dc2626',
@@ -240,6 +242,7 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
             <tr><td style="padding:9px 12px; background:#f8fafc; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>To</strong></td><td style="padding:9px 12px; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${leave.to}</td></tr>
             ${reason ? `<tr><td style="padding:9px 12px; background:#fef2f2; color: #991b1b;"><strong>Reason</strong></td><td style="padding:9px 12px; background:#fef2f2; color: #991b1b;">${reason}</td></tr>` : ''}
           </table>
+          ${action.html}
         </div>
       `,
     }),
@@ -252,12 +255,15 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
 async function sendFinalApprovalEmails(leave) {
   // ─── EMAIL 1: to Employee (personal approval) ───
   const employeeEmail = await findEmployeeEmail(leave.employee, leave.division);
+  if (!employeeEmail) throw new Error('Employee email address was not found.');
+  const employeeAction = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
+  const deliveryErrors = [];
 
-  if (employeeEmail) {
+  try {
     await sendEmail({
       to: employeeEmail,
       subject: `Your Leave Has Been Fully Approved — ${leave.type}`,
-      text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} has been fully approved.`,
+      text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} has been fully approved. View your leave requests: ${employeeAction.url}`,
       html: wrapTemplate({
         title: 'Your Leave Has Been Fully Approved',
         accentColor: '#059669',
@@ -275,21 +281,26 @@ async function sendFinalApprovalEmails(leave) {
             </table>
             
             <p style="font-size: 13px; color: #64748b; margin-top: 16px; background: #f8fafc; padding: 10px 12px; border-left: 3px solid #059669; border-radius: 4px;">Please make sure your Acting Officer is aware of your responsibilities during this time.</p>
+            ${employeeAction.html}
           </div>
         `,
       }),
     });
+  } catch (error) {
+    deliveryErrors.push(error);
   }
 
   // ─── EMAIL 2: to Acting Officer (with full details) ───
   if (leave.actingOfficer) {
     const aoEmail = await findEmployeeEmail(leave.actingOfficer, leave.division);
+    if (!aoEmail) throw new Error('Acting officer email address was not found.');
+    const actingOfficerAction = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
 
-    if (aoEmail) {
+    try {
       await sendEmail({
         to: aoEmail,
         subject: `You Are Officially Acting — ${leave.employee}'s Leave is Approved`,
-        text: `You are now officially acting for ${leave.employee} from ${leave.from} to ${leave.to}. Full leave details are attached.`,
+        text: `You are now officially acting for ${leave.employee} from ${leave.from} to ${leave.to}. View your acting assignments: ${actingOfficerAction.url}`,
         html: wrapTemplate({
           title: 'Your Acting Assignment is Now Active',
           accentColor: '#0284c7',
@@ -319,11 +330,21 @@ async function sendFinalApprovalEmails(leave) {
               </div>
               
               <p style="font-size: 13px; color: #64748b; margin-top: 16px;">If you have any concerns, contact your Division Head immediately.</p>
+              ${actingOfficerAction.html}
             </div>
           `,
         }),
       });
+    } catch (error) {
+      deliveryErrors.push(error);
     }
+  }
+
+  if (deliveryErrors.length > 0) {
+    throw Object.assign(
+      new Error('One or more final approval emails failed.'),
+      { code: deliveryErrors[0].code }
+    );
   }
 }
 
@@ -333,14 +354,14 @@ async function sendFinalApprovalEmails(leave) {
 async function sendActingOfficerCancelledEmail(leave, reason) {
   const email = await findEmployeeEmail(leave.actingOfficer, leave.division);
   if (!email) {
-    console.warn(`[Email] Acting officer email not found for cancellation: ${leave.actingOfficer}`);
-    return;
+    throw new Error('Acting officer email address was not found.');
   }
+  const action = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
 
   await sendEmail({
     to: email,
     subject: `Leave Request Cancelled — ${leave.employee}'s ${leave.type} Leave`,
-    text: `${leave.employee} has cancelled their ${leave.type} leave from ${leave.from} to ${leave.to}. No action is needed from you. ${reason ? 'Reason: ' + reason : ''}`,
+    text: `${leave.employee} has cancelled their ${leave.type} leave from ${leave.from} to ${leave.to}. No action is needed from you. ${reason ? 'Reason: ' + reason : ''} View your acting assignments: ${action.url}`,
     html: wrapTemplate({
       title: 'Leave Request Cancelled by Employee',
       accentColor: '#64748b',
@@ -367,6 +388,7 @@ async function sendActingOfficerCancelledEmail(leave, reason) {
               <strong>ℹ Note:</strong> You do not need to take any action. This email is for your information only.
             </p>
           </div>
+          ${action.html}
         </div>
       `,
     }),
@@ -378,12 +400,13 @@ async function sendActingOfficerCancelledEmail(leave, reason) {
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByHodEmail(leave, reason) {
   const email = await findEmployeeEmail(leave.employee, leave.division);
-  if (!email) return;
+  if (!email) throw new Error('Employee email address was not found.');
+  const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
   await sendEmail({
     to: email,
     subject: `Your Leave Was Declined by Head of Division — ${leave.type}`,
-    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by the Head of Division. ${reason ? 'Reason: ' + reason : ''}`,
+    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was declined by the Head of Division. ${reason ? 'Reason: ' + reason : ''} View your leave requests: ${action.url}`,
     html: wrapTemplate({
       title: 'Your Leave Was Declined by Head of Division',
       accentColor: '#dc2626',
@@ -400,6 +423,7 @@ async function sendEmployeeDeclinedByHodEmail(leave, reason) {
           </table>
           
           <p style="color: #475569; margin-top: 16px;">If you have questions, please contact your Division Head.</p>
+          ${action.html}
         </div>
       `,
     }),

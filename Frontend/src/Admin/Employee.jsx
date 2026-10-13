@@ -115,36 +115,65 @@ function Employee({ openCreate }) {
         },
     ];
 
+    // ============================================================
+    // COMPACT MOBILE CARD
+    // Row 1: avatar + name/email  |  small status badge
+    // Row 2: Designation · Division (inline)
+    // Row 3: Appointed: date
+    // Row 4: Edit / Deactivate buttons
+    // ============================================================
     const mobileRender = (emp, { getStatusBadge }) => (
-        <div className="p-3 space-y-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0">
+        <div className="p-2.5">
+            {/* Row 1: avatar + name/email + status */}
+            <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-[10px] shrink-0">
                     {emp.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
                 </div>
                 <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-white truncate">{emp.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{emp.email}</p>
+                    <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
+                        {emp.name}
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                        {emp.email}
+                    </p>
                 </div>
-                {getStatusBadge(emp.status)}
-            </div>
-            <div className="grid grid-cols-2 gap-1 text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
-                <div><span className="text-gray-400">Designation:</span> {emp.designation}</div>
-                <div><span className="text-gray-400">Division:</span> {emp.division}</div>
-                <div className="col-span-2">
-                    <span className="text-gray-400">Appointed:</span>{" "}
-                    {new Date(emp.appointment_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                <div className="shrink-0">
+                    {getStatusBadge(emp.status)}
                 </div>
             </div>
-            <div className="flex gap-1.5">
+
+            {/* Row 2: Designation · Division inline */}
+            <p className="text-[11px] text-gray-700 dark:text-gray-300 truncate mb-0.5">
+                <span className="text-gray-500 dark:text-gray-400">Designation: </span>
+                <span className="font-medium">{emp.designation}</span>
+                <span className="text-gray-400 dark:text-gray-500 mx-1">·</span>
+                <span className="text-gray-500 dark:text-gray-400">Division: </span>
+                <span className="font-medium">{emp.division}</span>
+            </p>
+
+            {/* Row 3: Appointed date */}
+            <p className="text-[11px] text-gray-700 dark:text-gray-300 mb-2">
+                <span className="text-gray-500 dark:text-gray-400">Appointed: </span>
+                <span className="font-medium">
+                    {new Date(emp.appointment_date).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                    })}
+                </span>
+            </p>
+
+            {/* Row 4: Buttons */}
+            <div className="flex gap-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-700">
                 <button
                     onClick={() => handleEdit(emp)}
-                    className="flex-1 px-2 py-1.5 text-[10px] sm:text-xs bg-blue-500 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+                    className="flex-1 px-2 py-1.5 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-700 transition-colors font-medium"
                 >
                     Edit
                 </button>
                 <button
                     onClick={() => handleToggleStatus(emp.id)}
-                    className="flex-1 px-2 py-1.5 text-[10px] sm:text-xs bg-red-500 text-white rounded hover:bg-red-700 transition-colors font-medium"
+                    className="flex-1 px-2 py-1.5 text-[10px] bg-red-500 text-white rounded hover:bg-red-700 transition-colors font-medium"
                 >
                     {emp.status === "Active" ? "Deactivate" : "Activate"}
                 </button>

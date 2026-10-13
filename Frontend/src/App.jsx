@@ -1,3 +1,4 @@
+import { apiUrl } from "./api.js";
 import { useState, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { hashPassword } from "./utils/passwordHash"
@@ -125,7 +126,7 @@ function App() {
       try {
         let loginAttempted = false;
         try {
-          const res = await fetch("/api/auth/login", {
+          const res = await fetch(apiUrl("/api/auth/login"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -219,7 +220,7 @@ function App() {
     setForgotMsg("Sending reset link... please wait");
 
     try {
-      const res = await fetch("/api/auth/forgot-password", {
+      const res = await fetch(apiUrl("/api/auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim() }),

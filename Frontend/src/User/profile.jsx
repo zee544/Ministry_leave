@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
-
+import { apiUrl } from "../api.js";
 function Profile() {
   const { currentUser, leaveEntitlements, fetchEmployees } = useUser();
   const { leaves } = useLeaves();
@@ -26,7 +26,7 @@ function Profile() {
     setError("");
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/profile", {
+      const res = await fetch(apiUrl("/api/auth/profile"), {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -151,7 +151,7 @@ function Profile() {
     setSaving(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/profile", {
+      const res = await fetch(apiUrl("/api/auth/profile"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,

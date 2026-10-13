@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-
+import { apiUrl } from "./api.js";
 const MINISTRY_DIVISIONS = [
   "Accounts",
   "Administration",
@@ -34,7 +34,7 @@ function HODSignup() {
   const [divisionsStatus, setDivisionsStatus] = useState([]);
 
   useEffect(() => {
-    fetch("/api/auth/divisions-status")
+    fetch(apiUrl("/api/auth/divisions-status"))
       .then((res) => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -116,7 +116,7 @@ function HODSignup() {
       setSuccessMessage("");
 
       try {
-        const res = await fetch("/api/auth/hod-signup", {
+        const res = await fetch(apiUrl("/api/auth/hod-signup"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

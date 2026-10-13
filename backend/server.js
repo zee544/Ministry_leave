@@ -13,6 +13,7 @@ const pool = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '127.0.0.1';
 
 app.use(cors({
   origin: '*',
@@ -33,7 +34,8 @@ app.get('/api/health', async (req, res) => {
       database: result[0].is_alive === 1 ? 'Connected' : 'Disconnected',
     });
   } catch (err) {
-    return res.status(500).json({ status: 'ERROR', database: err.message });
+    console.error('[Health] Database check failed:', err.code || 'UNKNOWN');
+    return res.status(500).json({ status: 'ERROR', database: 'Unavailable' });
   }
 });
 
@@ -45,8 +47,12 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ message: `API route ${req.originalUrl} not found.` });
 });
 
-app.listen(PORT, () => {
-  console.log(`[Server] Ministry Leave System Backend running on port ${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`[Server] Ministry Leave System Backend running at http://${HOST}:${PORT}`);
   console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`[Server] Database Host: ${process.env.DB_HOST || 'localhost'}, DB: ${process.env.DB_NAME || 'employes_db'}`);
+});
+
+server.on('error', (error) => {
+  console.error(`[Server] Failed to listen on ${HOST}:${PORT} (${error.code || 'UNKNOWN'}).`);
+  process.exitCode = 1;
 });

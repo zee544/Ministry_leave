@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
-
+import { apiUrl } from "../api.js";
 function HODSettings() {
   const { currentUser } = useUser();
   const { getSignature } = useSignatures();
@@ -45,7 +45,7 @@ function HODSettings() {
       try {
         const token = localStorage.getItem("token");
 
-        const profileRes = await fetch("/api/auth/profile", {
+        const profileRes = await fetch(apiUrl("/api/auth/profile"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (profileRes.ok) {
@@ -58,7 +58,7 @@ function HODSettings() {
           });
         }
 
-        const adminRes = await fetch("/api/auth/admin-info", {
+        const adminRes = await fetch(apiUrl("/api/auth/admin-info"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (adminRes.ok) {
@@ -67,7 +67,7 @@ function HODSettings() {
           setAdminInfo(null);
         }
 
-        const empRes = await fetch("/api/auth/division-employees", {
+        const empRes = await fetch(apiUrl("/api/auth/division-employees"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (empRes.ok) {
@@ -120,7 +120,7 @@ function HODSettings() {
     setSavingProfile(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/profile", {
+      const res = await fetch(apiUrl("/api/auth/profile"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -152,7 +152,7 @@ function HODSettings() {
     try {
       const token = localStorage.getItem("token");
       const signature = getSignature("hod");
-      const res = await fetch("/api/auth/signature", {
+      const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -210,7 +210,7 @@ function HODSettings() {
     setIsSubmittingPassword(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/auth/change-password", {
+      const res = await fetch(apiUrl("/api/auth/change-password"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

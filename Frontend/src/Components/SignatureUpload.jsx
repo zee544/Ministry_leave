@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
-
+import { apiUrl } from "../api.js";
 function SignatureUpload({
   signatureKey,
   label = "Signature",
@@ -24,7 +24,7 @@ function SignatureUpload({
 
       setSyncing(true);
       try {
-        const res = await fetch("/api/auth/signature", {
+        const res = await fetch(apiUrl("/api/auth/signature"), {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",

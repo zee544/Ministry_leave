@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
-
+import { apiUrl } from "../api.js";
 const UserContext = createContext();
 
 // Current logged-in user (in a real app this comes from auth/session)
@@ -133,7 +133,7 @@ export function UserProvider({ children }) {
       // EMPLOYEE
       if (role === 'employee') {
         try {
-          const actingRes = await fetch("/api/admin/employees/acting-officers", {
+          const actingRes = await fetch(apiUrl("/api/admin/employees/acting-officers"), {
             headers: { 
               Authorization: `Bearer ${authToken}`,
               'Content-Type': 'application/json'
@@ -170,7 +170,7 @@ export function UserProvider({ children }) {
 
       // ADMIN
       if (role === 'admin') {
-        const res = await fetch("/api/admin/employees", {
+        const res = await fetch(apiUrl("/api/admin/employees"), {
           headers: { 
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json'
@@ -207,7 +207,7 @@ export function UserProvider({ children }) {
 
       // HOD
       if (role === 'hod') {
-        const res = await fetch("/api/admin/employees/acting-officers", {
+        const res = await fetch(apiUrl("/api/admin/employees/acting-officers"), {
           headers: { 
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json'
@@ -306,7 +306,7 @@ export function UserProvider({ children }) {
     const token = localStorage.getItem("token");
     if (currentUser?.role === "admin" && token) {
       try {
-        const res = await fetch("/api/admin/employees", {
+        const res = await fetch(apiUrl("/api/admin/employees"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -347,7 +347,7 @@ export function UserProvider({ children }) {
     const token = localStorage.getItem("token");
     if (currentUser?.role === "admin" && token) {
       try {
-        const res = await fetch(`/api/admin/employees/${id}`, {
+        const res = await fetch(apiUrl(`/api/admin/employees/${id}`), {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -373,7 +373,7 @@ export function UserProvider({ children }) {
     const token = localStorage.getItem("token");
     if (currentUser?.role === "admin" && token) {
       try {
-        const res = await fetch(`/api/admin/employees/${id}/status`, {
+        const res = await fetch(apiUrl(`/api/admin/employees/${id}/status`), {
           method: "PATCH",
           headers: { 
             Authorization: `Bearer ${token}`,

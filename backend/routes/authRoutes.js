@@ -3,37 +3,9 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 const { verifyToken, requireAdmin } = require('../middleware/auth');
-
-// ═══════════════════════════════════════════════
-// Gmail SMTP transporter (lazy init)
-// ═══════════════════════════════════════════════
-let mailer = null;
-function getMailer() {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-    return null;
-  }
-  if (!mailer) {
-    mailer = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: false, // true for 465, false for 587
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-  return mailer;
-}
-
-function getFromAddress() {
-  const name = process.env.FROM_NAME || 'Ministry Leave System';
-  const email = process.env.FROM_EMAIL || process.env.SMTP_USER;
-  return `"${name}" <${email}>`;
-}
+const { sendEmail, wrapTemplate, getFrontendUrl } = require('../utils/emailService');
 
 /**
  * @route   GET /api/auth/divisions-status
@@ -472,7 +444,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 
   const genericMessage =
-    'Please check your inbox.';
+    'If an account exists for this address, a reset email will be sent.';
 
   try {
     let user = null;
@@ -500,11 +472,8 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     if (!user) {
-  return res.status(200).json({
-    message: 'Please check the email address.',
-    notRegistered: true,
-  });
-}
+      return res.status(200).json({ message: genericMessage });
+    }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -521,25 +490,12 @@ router.post('/forgot-password', async (req, res) => {
       [cleanEmail, userRole, tokenHash, expiresAt]
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-
-    const transporter = getMailer();
-
-    if (!transporter) {
-      console.log('\n══════════════════════════════════════════════');
-      console.log(`[PASSWORD RESET] (no SMTP configured — dev fallback)`);
-      console.log(`[PASSWORD RESET] For: ${user.email} (${userRole})`);
-      console.log(`[PASSWORD RESET] Link: ${resetLink}`);
-      console.log('══════════════════════════════════════════════\n');
-      return res.status(200).json({ message: genericMessage });
-    }
+    const resetUrl = new URL(getFrontendUrl('/reset-password'));
+    resetUrl.searchParams.set('token', rawToken);
+    const resetLink = resetUrl.toString();
 
     try {
-      const fromAddress = getFromAddress();
-
-      const info = await transporter.sendMail({
-        from: fromAddress,
+      await sendEmail({
         to: user.email,
         subject: 'Password Reset Request — Ministry Leave System',
         html: `
@@ -563,18 +519,33 @@ router.post('/forgot-password', async (req, res) => {
             </p>
           </div>
         `,
+        text: `Hello ${user.name}, use this link to reset your password: ${resetLink} (expires in 15 minutes).`,
       });
-
-      console.log(`[PASSWORD RESET] ✅ Email sent to ${user.email} (Message ID: ${info.messageId})`);
     } catch (emailErr) {
-      console.error('[PASSWORD RESET] Email send failed:', emailErr.message);
-      console.log(`[PASSWORD RESET] (fallback link) ${resetLink}`);
+      try {
+        await pool.query(
+          'UPDATE password_resets SET used = 1 WHERE token_hash = ?',
+          [tokenHash]
+        );
+      } catch (revokeError) {
+        console.error(
+          '[PASSWORD RESET] Failed to revoke unsent reset token:',
+          revokeError.code || 'UNKNOWN'
+        );
+      }
+      console.error(
+        '[PASSWORD RESET] Email delivery failed:',
+        emailErr.code || 'UNKNOWN'
+      );
+      return res.status(503).json({
+        message: 'Password reset email could not be sent. Please try again later.',
+      });
     }
 
     return res.status(200).json({ message: genericMessage });
   } catch (error) {
-    console.error('[Auth Error] /forgot-password:', error);
-    return res.status(200).json({ message: genericMessage });
+    console.error('[Auth Error] /forgot-password:', error.code || 'UNKNOWN');
+    return res.status(500).json({ message: 'Failed to process password reset request.' });
   }
 });
 
@@ -638,7 +609,7 @@ router.post('/reset-password', async (req, res) => {
       message: 'Password reset successfully. You can now sign in with your new password.',
     });
   } catch (error) {
-    console.error('[Auth Error] /reset-password:', error);
+    console.error('[Auth Error] /reset-password:', error.code || 'UNKNOWN');
     return res.status(500).json({ message: 'Failed to reset password.' });
   }
 });

@@ -16,6 +16,16 @@ const {
   sendActingOfficerCancelledEmail,
 } = require('../utils/leaveEmails');
 
+async function sendEmailNotification(send, label) {
+  try {
+    await send();
+    return true;
+  } catch (error) {
+    console.error(`[Email] ${label} notification failed (${error.code || 'UNKNOWN'}).`);
+    return false;
+  }
+}
+
 // ============================================
 // HOLIDAY API HELPER
 // ============================================
@@ -164,8 +174,8 @@ router.post('/leaves', verifyToken, async (req, res) => {
 
     console.log(`[API] New leave created: ${result.insertId} for ${employee} (${noOfDays} day(s))`);
 
-    sendActingOfficerAssignedEmail(
-      {
+    const emailSent = await sendEmailNotification(
+      () => sendActingOfficerAssignedEmail({
         employee,
         division,
         type,
@@ -174,15 +184,18 @@ router.post('/leaves', verifyToken, async (req, res) => {
         noOfDays,
         reason,
         address,
-      },
-      actingOfficer
-    ).catch((err) => console.error('[Email] Acting officer email failed:', err));
+      }, actingOfficer),
+      'Acting officer assignment'
+    );
 
     return res.status(201).json({
-      message: 'Leave application submitted successfully. Awaiting acting officer confirmation.',
+      message: emailSent
+        ? 'Leave application submitted successfully. Awaiting acting officer confirmation.'
+        : 'Leave application was submitted, but the acting officer notification email could not be sent.',
       leaveId: result.insertId,
       status: 'Pending Acting Officer',
       noOfDays,
+      emailSent,
     });
   } catch (error) {
     console.error('[Admin API Error] POST /leaves:', error);
@@ -260,20 +273,20 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       reason: leaveData.reason,
     };
 
-    if (action === 'confirm') {
-      sendAdminAwaitingApprovalEmail(emailLeave, actingOfficer)
-        .catch((err) => console.error('[Email] Admin email failed:', err));
-    } else {
-      sendEmployeeDeclinedByActingOfficerEmail(emailLeave, actingOfficer, reason)
-        .catch((err) => console.error('[Email] Employee decline email failed:', err));
-    }
+    const emailSent = await sendEmailNotification(
+      () => action === 'confirm'
+        ? sendAdminAwaitingApprovalEmail(emailLeave, actingOfficer)
+        : sendEmployeeDeclinedByActingOfficerEmail(emailLeave, actingOfficer, reason),
+      action === 'confirm' ? 'Admin approval request' : 'Acting officer decline'
+    );
 
     return res.status(200).json({
       success: true,
       message: `Leave ${action === 'confirm' ? 'confirmed' : 'declined'} by acting officer.`,
       id: leaveId,
       status: newStatus,
-      leave: updatedLeave[0]
+      leave: updatedLeave[0],
+      emailSent,
     });
   } catch (error) {
     console.error('[Acting API Error]:', error);
@@ -349,10 +362,12 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
       actingOfficer: leave.acting_officer,
     };
 
-    if (leave.acting_officer) {
-      sendActingOfficerCancelledEmail(emailLeave, cancelReason)
-        .catch((err) => console.error('[Email] Acting officer cancel email failed:', err));
-    }
+    const emailSent = leave.acting_officer
+      ? await sendEmailNotification(
+        () => sendActingOfficerCancelledEmail(emailLeave, cancelReason),
+        'Acting officer cancellation'
+      )
+      : null;
 
     return res.status(200).json({
       success: true,
@@ -360,6 +375,7 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
       id: leaveId,
       status: 'Cancelled',
       reason: cancelReason,
+      emailSent,
     });
   } catch (error) {
     console.error('[Cancel API Error]:', error);
@@ -532,15 +548,20 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
       [leaveId]
     );
 
+    let emailSent = null;
     if (emailLeaveRows.length > 0) {
       const emailLeave = emailLeaveRows[0];
 
       if (action === 'approve') {
-        sendFinalApprovalEmails(emailLeave)
-          .catch((err) => console.error('[Email] Final approval emails failed:', err));
+        emailSent = await sendEmailNotification(
+          () => sendFinalApprovalEmails(emailLeave),
+          'Final approval'
+        );
       } else {
-        sendEmployeeDeclinedByHodEmail(emailLeave, reason)
-          .catch((err) => console.error('[Email] HOD decline email failed:', err));
+        emailSent = await sendEmailNotification(
+          () => sendEmployeeDeclinedByHodEmail(emailLeave, reason),
+          'HOD decline'
+        );
       }
     }
 
@@ -548,6 +569,7 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
       message: `Leave ${action === 'approve' ? 'approved' : 'declined'} by HOD successfully.`,
       id: leaveId,
       status: newStatus,
+      emailSent,
     });
   } catch (error) {
     console.error('[HOD API Error] /leaves/:id/hod-approve:', error);
@@ -789,15 +811,20 @@ router.put('/leaves/:id/status', async (req, res) => {
       [leaveId]
     );
 
+    let emailSent = null;
     if (emailLeaveRows.length > 0) {
       const emailLeave = emailLeaveRows[0];
 
       if (status === 'Admin Approved') {
-        sendHodAwaitingFinalApprovalEmail(emailLeave)
-          .catch((err) => console.error('[Email] HOD email failed:', err));
+        emailSent = await sendEmailNotification(
+          () => sendHodAwaitingFinalApprovalEmail(emailLeave),
+          'HOD final approval request'
+        );
       } else if (status === 'Declined') {
-        sendEmployeeDeclinedByAdminEmail(emailLeave, reason)
-          .catch((err) => console.error('[Email] Employee email failed:', err));
+        emailSent = await sendEmailNotification(
+          () => sendEmployeeDeclinedByAdminEmail(emailLeave, reason),
+          'Admin decline'
+        );
       }
     }
 
@@ -806,6 +833,7 @@ router.put('/leaves/:id/status', async (req, res) => {
       message: `Leave status updated to "${status}" successfully.`,
       id: leaveId,
       status,
+      emailSent,
     });
   } catch (error) {
     console.error('[Admin API Error] /leaves/:id/status:', error);
@@ -833,7 +861,7 @@ router.get('/employees', async (req, res) => {
   }
 });
 
-router.post('/employees', async (req, res) => {
+router.post('/employees', verifyToken, requireAdmin, async (req, res) => {
   const division = req.user.division;
   const { name, designation, email, appointment_date, password } = req.body;
 

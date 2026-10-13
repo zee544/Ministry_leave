@@ -3,6 +3,7 @@ import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import { calculateWorkingDays, yearsInRange } from "../utils/leaveDays.js";
+import { apiUrl } from "../api.js";
 
 function ApplyLeave() {
     const { addNotification } = useNotifications();
@@ -48,7 +49,7 @@ function ApplyLeave() {
             const token = localStorage.getItem("token");
             if (!token) return null;
 
-            const res = await fetch(`/api/admin/holidays?year=${year}`, {
+            const res = await fetch(apiUrl(`/api/admin/holidays?year=${year}`), {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
