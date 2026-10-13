@@ -390,11 +390,15 @@ function Myleaves() {
             )}
 
             {editing !== null && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-blue-200 dark:border-blue-800 p-4 lg:p-6 mb-6">
-                    <h4 className="text-base font-bold text-gray-800 dark:text-white mb-4"> Edit Leave Request</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-blue-200 dark:border-blue-800 p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
+                    <h4 className="text-sm sm:text-base font-bold text-gray-800 dark:text-white mb-3 sm:mb-4">
+                        Edit Leave Request
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Leave Type</label>
+                            <label className="block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                                Leave Type
+                            </label>
                             <select
                                 value={editForm.type || ""}
                                 onChange={(e) => handleEditTypeChange(e.target.value)}
@@ -407,7 +411,9 @@ function Myleaves() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">No. of Days</label>
+                            <label className="block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                                No. of Days
+                            </label>
                             <input
                                 type="number"
                                 min="0.5"
@@ -418,7 +424,9 @@ function Myleaves() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Date of Commencing Leave</label>
+                            <label className="block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                                Date of Commencing Leave
+                            </label>
                             <input
                                 type="date"
                                 value={editForm.from || ""}
@@ -427,7 +435,9 @@ function Myleaves() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Date of Resuming Duties</label>
+                            <label className="block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                                Date of Resuming Duties
+                            </label>
                             <input
                                 type="date"
                                 value={editForm.to || ""}
@@ -436,7 +446,9 @@ function Myleaves() {
                             />
                         </div>
                         <div className="col-span-1 sm:col-span-2">
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Reason</label>
+                            <label className="block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                                Reason
+                            </label>
                             <input
                                 type="text"
                                 value={editForm.reason || ""}
@@ -445,16 +457,16 @@ function Myleaves() {
                             />
                         </div>
                     </div>
-                    <div className="flex gap-2 mt-4">
+                    <div className="flex gap-2 mt-3 sm:mt-4">
                         <button
                             onClick={() => handleSaveEdit(editing)}
-                            className="px-4 py-2 bg-teal-500 text-white text-sm rounded-lg hover:bg-teal-700 transition-colors"
+                            className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-teal-500 text-white text-xs sm:text-sm rounded-lg hover:bg-teal-700 transition-colors font-medium"
                         >
                             Save Changes
                         </button>
                         <button
                             onClick={handleCancelEdit}
-                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            className="flex-1 sm:flex-none px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-xs sm:text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
                         >
                             Cancel
                         </button>

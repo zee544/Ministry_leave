@@ -218,29 +218,29 @@ function ApplyLeave() {
     };
 
    const inputBaseClass =
-    "w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500 transition-colors placeholder-gray-400 [color-scheme:light] dark:[color-scheme:dark]";
+    "w-full px-2.5 sm:px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-xs sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500 transition-colors placeholder-gray-400 [color-scheme:light] dark:[color-scheme:dark]";
     const labelClass =
-        "block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1";
+        "block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1";
 
     return (
         <div className="w-full">
-            <div className="mb-4 sm:mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
+            <div className="mb-3 sm:mb-6">
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-800 dark:text-white">
                     Apply for Leave
                 </h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-[11px] sm:text-sm text-gray-500 dark:text-gray-400">
                     Fill out the form below to submit a new leave request.
                 </p>
             </div>
 
             {showSuccess && (
-                <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-xl flex items-center gap-3">
-                    <span className="text-green-600 dark:text-green-400 text-lg">✅</span>
+                <div className="mb-3 sm:mb-4 p-2.5 sm:p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-xl flex items-center gap-2.5 sm:gap-3">
+                    <span className="text-green-600 dark:text-green-400 text-base sm:text-lg">✅</span>
                     <div>
-                        <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+                        <p className="text-xs sm:text-sm font-semibold text-green-800 dark:text-green-300">
                             Leave Application Submitted!
                         </p>
-                        <p className="text-xs text-green-600 dark:text-green-400">
+                        <p className="text-[10px] sm:text-xs text-green-600 dark:text-green-400">
                             Your request has been forwarded to your acting officer.
                         </p>
                     </div>
@@ -249,9 +249,9 @@ function ApplyLeave() {
 
             <form
                 onSubmit={handleSubmit}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-3 sm:p-6"
             >
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
                         <label className={labelClass}>Leave Type *</label>
                         <select
@@ -340,7 +340,7 @@ function ApplyLeave() {
                                 ))
                             )}
                         </select>
-                        <p className="text-xs text-gray-400 dark:text-gray-400 mt-1">
+                        <p className="text-[10px] sm:text-xs text-gray-400 dark:text-gray-400 mt-1">
                             {loading
                                 ? "Loading..."
                                 : actingOfficers.length === 0
@@ -363,7 +363,7 @@ function ApplyLeave() {
                         <button
                             type="submit"
                             disabled={isSubmitting || loading || actingOfficers.length === 0}
-                            className="w-full sm:w-auto px-6 py-2.5 bg-teal-500 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-teal-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? "Submitting..." : "Submit Leave Request"}
                         </button>

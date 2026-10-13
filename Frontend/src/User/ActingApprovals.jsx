@@ -337,14 +337,16 @@ function ActingApprovals() {
     ];
 
     // ============================================================
-    // COMPACT MOBILE CARDS — small padding, tight spacing, 2-col grid
+    // COMPACT MOBILE CARDS — 4 tight rows
+    // Row 1: Name + Days      Row 2: Division · Type
+    // Row 3: From → To        Row 4: Status (left) + buttons (right)
     // ============================================================
 
     const PendingMobileCard = ({ item }) => (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-800 p-2.5 mb-2 shadow-sm">
-            {/* Header row: name + days */}
-            <div className="flex justify-between items-center gap-2 mb-1.5">
-                <p className="font-semibold text-sm text-gray-800 dark:text-white truncate">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-800 p-2 mb-1.5">
+            {/* Row 1 */}
+            <div className="flex justify-between items-center gap-2 mb-1">
+                <p className="font-semibold text-[13px] text-gray-800 dark:text-white truncate">
                     {item.employee}
                 </p>
                 <span className="shrink-0 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">
@@ -352,65 +354,60 @@ function ActingApprovals() {
                 </span>
             </div>
 
-            {/* Division + Type — inline small */}
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1.5">
+            {/* Row 2 */}
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate mb-1">
                 {item.division} · {item.type}
             </p>
 
-            {/* From / To — 2 column compact grid */}
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] mb-2">
-                <div>
-                    <span className="text-gray-500 dark:text-gray-400">From: </span>
-                    <span className="text-gray-800 dark:text-gray-200 font-medium">{item.from}</span>
-                </div>
-                <div>
-                    <span className="text-gray-500 dark:text-gray-400">To: </span>
-                    <span className="text-gray-800 dark:text-gray-200 font-medium">{item.to}</span>
-                </div>
-            </div>
+            {/* Row 3 */}
+            <p className="text-[11px] text-gray-800 dark:text-gray-200 mb-1.5">
+                <span className="text-gray-500 dark:text-gray-400">From: </span>
+                <span className="font-medium">{item.from}</span>
+                <span className="text-gray-400 dark:text-gray-500 mx-1">→</span>
+                <span className="text-gray-500 dark:text-gray-400">To: </span>
+                <span className="font-medium">{item.to}</span>
+            </p>
 
-            {/* Status pill */}
-            <div className="mb-2">
-                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+            {/* Row 4: status + buttons on same row */}
+            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-amber-100 dark:border-amber-800">
+                <span className="shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
                     Awaiting Confirmation
                 </span>
-            </div>
-
-            {/* Action buttons — compact */}
-            <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-amber-100 dark:border-amber-800">
-                <button
-                    onClick={() => {
-                        setSelectedLeave(item);
-                        setShowPrintModal(true);
-                    }}
-                    disabled={loading}
-                    className="px-2 py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded hover:bg-purple-700 disabled:opacity-60"
-                >
-                    View
-                </button>
-                <button
-                    onClick={() => askConfirm(item)}
-                    disabled={loading}
-                    className="px-2 py-1.5 bg-green-500 text-white text-[11px] font-medium rounded hover:bg-green-700 disabled:opacity-60"
-                >
-                    Confirm
-                </button>
-                <button
-                    onClick={() => askDecline(item)}
-                    disabled={loading}
-                    className="px-2 py-1.5 bg-red-500 text-white text-[11px] font-medium rounded hover:bg-red-700 disabled:opacity-60"
-                >
-                    Decline
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button
+                        onClick={() => {
+                            setSelectedLeave(item);
+                            setShowPrintModal(true);
+                        }}
+                        disabled={loading}
+                        className="px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded hover:bg-purple-700 disabled:opacity-60"
+                    >
+                        View
+                    </button>
+                    <button
+                        onClick={() => askConfirm(item)}
+                        disabled={loading}
+                        className="px-2 py-1 bg-green-500 text-white text-[10px] font-medium rounded hover:bg-green-700 disabled:opacity-60"
+                    >
+                        Confirm
+                    </button>
+                    <button
+                        onClick={() => askDecline(item)}
+                        disabled={loading}
+                        className="px-2 py-1 bg-red-500 text-white text-[10px] font-medium rounded hover:bg-red-700 disabled:opacity-60"
+                    >
+                        Decline
+                    </button>
+                </div>
             </div>
         </div>
     );
 
     const HistoryMobileCard = ({ item }) => (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2.5 mb-2 shadow-sm">
-            {/* Header row */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2 mb-1.5">
+            {/* Row 1 */}
             <div className="flex justify-between items-center gap-2 mb-1">
-                <p className="font-semibold text-sm text-gray-800 dark:text-white truncate">
+                <p className="font-semibold text-[13px] text-gray-800 dark:text-white truncate">
                     {item.employee || "—"}
                 </p>
                 <span className="shrink-0 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">
@@ -418,34 +415,29 @@ function ActingApprovals() {
                 </span>
             </div>
 
-            {/* Division + Type */}
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1.5">
+            {/* Row 2 */}
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate mb-1">
                 {item.division || "—"} · {item.type || "—"}
             </p>
 
-            {/* From / To compact grid */}
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] mb-2">
-                <div>
-                    <span className="text-gray-500 dark:text-gray-400">From: </span>
-                    <span className="text-gray-800 dark:text-gray-200 font-medium">{item.from || "—"}</span>
-                </div>
-                <div>
-                    <span className="text-gray-500 dark:text-gray-400">To: </span>
-                    <span className="text-gray-800 dark:text-gray-200 font-medium">{item.to || "—"}</span>
-                </div>
-            </div>
+            {/* Row 3 */}
+            <p className="text-[11px] text-gray-800 dark:text-gray-200 mb-1.5">
+                <span className="text-gray-500 dark:text-gray-400">From: </span>
+                <span className="font-medium">{item.from || "—"}</span>
+                <span className="text-gray-400 dark:text-gray-500 mx-1">→</span>
+                <span className="text-gray-500 dark:text-gray-400">To: </span>
+                <span className="font-medium">{item.to || "—"}</span>
+            </p>
 
-            {/* Status */}
-            <div className="mb-2">{renderHistoryStatus(item)}</div>
-
-            {/* View button */}
-            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+            {/* Row 4: status + View on same row */}
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-100 dark:border-gray-700">
+                <div className="min-w-0">{renderHistoryStatus(item)}</div>
                 <button
                     onClick={() => {
                         setSelectedLeave(item);
                         setShowPrintModal(true);
                     }}
-                    className="w-full px-2 py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded hover:bg-purple-700"
+                    className="shrink-0 px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded hover:bg-purple-700"
                 >
                     View
                 </button>

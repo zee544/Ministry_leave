@@ -246,17 +246,17 @@ function HODSettings() {
 
   const inputClass = (field, errorsObj) =>
     errorsObj[field]
-      ? "w-full px-3.5 py-2.5 rounded-lg border border-red-400 dark:border-red-500 bg-red-50/40 dark:bg-red-900/20 text-sm text-gray-800 dark:text-white outline-none focus:ring-2 focus:ring-red-400/40 transition"
-      : "w-full px-3.5 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-[#0000A0] dark:focus:border-blue-500 focus:ring-2 focus:ring-[#0000A0]/30 dark:focus:ring-blue-500/30 transition";
+      ? "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-red-400 dark:border-red-500 bg-red-50/40 dark:bg-red-900/20 text-xs sm:text-sm text-gray-800 dark:text-white outline-none focus:ring-2 focus:ring-red-400/40 transition"
+      : "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs sm:text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-[#0000A0] dark:focus:border-blue-500 focus:ring-2 focus:ring-[#0000A0]/30 dark:focus:ring-blue-500/30 transition";
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400">
-        <svg className="animate-spin h-8 w-8 mb-3 text-[#0000A0] dark:text-blue-400" viewBox="0 0 24 24" fill="none">
+      <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-500 dark:text-gray-400">
+        <svg className="animate-spin h-7 w-7 sm:h-8 sm:w-8 mb-3 text-[#0000A0] dark:text-blue-400" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
         </svg>
-        <span className="text-sm">Loading settings...</span>
+        <span className="text-xs sm:text-sm">Loading settings...</span>
       </div>
     );
   }
@@ -266,7 +266,7 @@ function HODSettings() {
       {/* ===== Toast ===== */}
       {toast && (
         <div
-          className={`fixed top-6 right-6 z-[100] px-5 py-3 text-white text-sm font-medium rounded-xl shadow-xl flex items-center gap-3 ${
+          className={`fixed top-4 right-4 sm:top-6 sm:right-6 z-[100] px-4 sm:px-5 py-2.5 sm:py-3 text-white text-xs sm:text-sm font-medium rounded-xl shadow-xl flex items-center gap-2 sm:gap-3 ${
             toastType === "error" ? "bg-red-600" : "bg-emerald-600"
           }`}
         >
@@ -276,35 +276,35 @@ function HODSettings() {
       )}
 
       <div className="max-w-3xl">
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* ============ My Profile ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between">
-              <div>
-                <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                   My Profile
                 </h2>
               </div>
               {!isEditingProfile ? (
                 <button
                   onClick={handleStartEditProfile}
-                  className="px-5 py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   Edit
                 </button>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex gap-1.5 sm:gap-2 shrink-0">
                   <button
                     onClick={handleCancelEditProfile}
                     disabled={savingProfile}
-                    className="px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveProfile}
                     disabled={savingProfile}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-[#0000A0] dark:bg-blue-600 rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60"
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white bg-[#0000A0] dark:bg-blue-600 rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60"
                   >
                     {savingProfile ? "Saving..." : "Save"}
                   </button>
@@ -312,17 +312,17 @@ function HODSettings() {
               )}
             </div>
 
-            <div className="px-6 py-5">
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
               {editErrors.general && (
-                <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 text-xs">
+                <div className="mb-3 sm:mb-4 p-2.5 sm:p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 text-[11px] sm:text-xs">
                   {editErrors.general}
                 </div>
               )}
 
               {isEditingProfile ? (
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                    <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                       Name <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -333,14 +333,14 @@ function HODSettings() {
                       placeholder="Enter full name"
                     />
                     {editErrors.name && (
-                      <span className="text-xs text-red-500 mt-1.5 block">
+                      <span className="text-[11px] sm:text-xs text-red-500 mt-1 sm:mt-1.5 block">
                         {editErrors.name}
                       </span>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                    <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                       Email <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -351,14 +351,14 @@ function HODSettings() {
                       placeholder="name@example.com"
                     />
                     {editErrors.email && (
-                      <span className="text-xs text-red-500 mt-1.5 block">
+                      <span className="text-[11px] sm:text-xs text-red-500 mt-1 sm:mt-1.5 block">
                         {editErrors.email}
                       </span>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                    <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                       Designation
                     </label>
                     <input
@@ -371,7 +371,7 @@ function HODSettings() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
                   <InfoRow label="Name" value={profile?.name} />
                   <InfoRow label="Email" value={profile?.email} />
                   <InfoRow label="Designation" value={profile?.designation} />
@@ -383,17 +383,17 @@ function HODSettings() {
 
           {/* ============ Division Information ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
+              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                 Division Information
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 Your assigned division and ministry details.
               </p>
             </div>
 
-            <div className="px-6 py-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
                 <InfoRow
                   label="Division"
                   value={profile?.division || currentUser?.division}
@@ -408,28 +408,27 @@ function HODSettings() {
 
           {/* ============ Admin Information ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between">
-              <div>
-                <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
-                  {adminInfo.division} CC
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white truncate">
+                  {adminInfo?.division} CC
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   The administrator assigned to your division.
                 </p>
               </div>
-              
             </div>
 
-            <div className="px-6 py-5">
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
               {adminInfo ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
                   <InfoRow label="Name" value={adminInfo.name} />
                   <InfoRow label="Email" value={adminInfo.email} />
                   <InfoRow label="Designation" value={adminInfo.designation} />
                   <InfoRow label="Employee ID" value={adminInfo.employeeId} />
                 </div>
               ) : (
-                <div className="text-sm text-gray-500 dark:text-gray-400 italic">
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 italic">
                   No Admin registered for your division yet.
                 </div>
               )}
@@ -438,30 +437,30 @@ function HODSettings() {
 
           {/* ============ HOD Signature ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between">
-              <div>
-                <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                   HOD Signature
                 </h2>
               </div>
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-2 py-0.5 rounded">
+              <span className="shrink-0 text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-1.5 sm:px-2 py-0.5 rounded">
                 Required
               </span>
             </div>
 
-            <div className="px-6 py-5">
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
               <SignatureUpload signatureKey="hod" label="HOD Signature" />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3">
                 This signature will be automatically applied to all printed
                 leave forms as the Head of Division.
               </p>
             </div>
 
-            <div className="px-6 py-4 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 flex justify-end">
               <button
                 onClick={handleSaveSignature}
                 disabled={savingSignature}
-                className="px-5 py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {savingSignature ? (
                   <>
@@ -480,26 +479,26 @@ function HODSettings() {
 
           {/* ============ Security ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
+              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                 Security
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 Update your password to keep your account secure.
               </p>
             </div>
 
-            <div className="px-6 py-5">
-              <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300">
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
+              <div className="flex items-center justify-between gap-2 p-3 sm:p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
+                <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 text-sm sm:text-base">
                     🔒
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-gray-800 dark:text-white">
                       Password
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Last changed
                     </p>
                   </div>
@@ -514,7 +513,7 @@ function HODSettings() {
                     });
                     setShowPasswordModal(true);
                   }}
-                  className="px-5 py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   Change
                 </button>
@@ -525,14 +524,14 @@ function HODSettings() {
       </div>
 
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 dark:bg-black/70">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 dark:border-gray-700">
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between">
-              <div>
-                <h3 className="text-m font-bold text-gray-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/60 dark:bg-black/70">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[92vh] overflow-y-auto">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
                   Change Password
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Choose a strong password you haven't used before.
                 </p>
               </div>
@@ -540,16 +539,16 @@ function HODSettings() {
                 type="button"
                 onClick={() => setShowPasswordModal(false)}
                 disabled={isSubmittingPassword}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition text-xl leading-none disabled:opacity-50"
+                className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition text-xl leading-none disabled:opacity-50"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handlePasswordSubmit} className="p-6 space-y-5">
+            <form onSubmit={handlePasswordSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                   Current Password
                 </label>
                 <input
@@ -562,14 +561,14 @@ function HODSettings() {
                   placeholder="Enter current password"
                 />
                 {passwordErrors.currentPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1 sm:mt-1.5 block">
                     {passwordErrors.currentPassword}
                   </span>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                   New Password
                 </label>
                 <input
@@ -582,12 +581,12 @@ function HODSettings() {
                   placeholder="Enter new password"
                 />
                 {passwordErrors.newPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1 sm:mt-1.5 block">
                     {passwordErrors.newPassword}
                   </span>
                 )}
                 {!passwordErrors.newPassword && passwordForm.newPassword && (
-                  <ul className="mt-2 space-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  <ul className="mt-2 space-y-0.5 text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400">
                     <li className={passwordForm.newPassword.length >= 8 ? "text-emerald-600 dark:text-emerald-400" : ""}>
                       • At least 8 characters
                     </li>
@@ -605,7 +604,7 @@ function HODSettings() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 sm:mb-1.5">
                   Confirm New Password
                 </label>
                 <input
@@ -618,25 +617,25 @@ function HODSettings() {
                   placeholder="Re-enter new password"
                 />
                 {passwordErrors.confirmPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1 sm:mt-1.5 block">
                     {passwordErrors.confirmPassword}
                   </span>
                 )}
               </div>
 
-              <div className="flex gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex gap-2 sm:gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                 <button
                   type="button"
                   onClick={() => setShowPasswordModal(false)}
                   disabled={isSubmittingPassword}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingPassword}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-[#006A4E] dark:bg-emerald-600 rounded-lg hover:bg-[#1B5448] dark:hover:bg-emerald-700 transition disabled:opacity-60 shadow-sm"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-[#006A4E] dark:bg-emerald-600 rounded-lg hover:bg-[#1B5448] dark:hover:bg-emerald-700 transition disabled:opacity-60 shadow-sm"
                 >
                   {isSubmittingPassword ? "Updating..." : "Update Password"}
                 </button>
@@ -652,10 +651,10 @@ function HODSettings() {
 function InfoRow({ label, value }) {
   return (
     <div>
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+      <p className="text-[10px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
         {label}
       </p>
-      <p className="text-sm font-medium text-gray-800 dark:text-white mt-1">{value || "—"}</p>
+      <p className="text-xs sm:text-sm font-medium text-gray-800 dark:text-white mt-0.5 sm:mt-1">{value || "—"}</p>
     </div>
   );
 }

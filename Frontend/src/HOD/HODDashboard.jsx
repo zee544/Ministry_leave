@@ -210,6 +210,7 @@ function HODDashboard() {
     closeModal();
   };
 
+  // ---- Desktop status renderer (original size, unchanged) ----
   const renderStatusBadge = (item) => {
     if (item.status === "Pending Acting Officer") {
       return (
@@ -267,6 +268,70 @@ function HODDashboard() {
     }
     return (
       <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+        {item.status || "—"}
+      </span>
+    );
+  };
+
+  // ---- Compact mobile status renderer ----
+  const renderMobileStatus = (item) => {
+    const size = "px-2 py-0.5 text-[10px] rounded-md font-semibold whitespace-nowrap inline-block";
+    if (item.status === "Pending Acting Officer") {
+      return (
+        <span className={`${size} bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700`}>
+          Awaiting Acting Officer
+        </span>
+      );
+    }
+    if (item.status === "Pending") {
+      return (
+        <span className={`${size} bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700`}>
+          Awaiting Admin
+        </span>
+      );
+    }
+    if (item.status === "Admin Approved") {
+      return (
+        <span className={`${size} bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-700`}>
+          Awaiting HOD
+        </span>
+      );
+    }
+    if (item.status === "Approved") {
+      return (
+        <span className={`${size} bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-700`}>
+          ✓ Approved
+        </span>
+      );
+    }
+    if (item.status === "Declined") {
+      const by = item.declinedBy || item.declined_by || "—";
+      const reason = item.declineReason || item.decline_reason;
+      return (
+        <div className="flex flex-col gap-0.5 items-end max-w-[180px]">
+          <span className={`${size} bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700`}>
+            ✗ Declined By {by}
+          </span>
+          {reason && (
+            <span
+              className="text-[10px] text-red-600 dark:text-red-400 italic whitespace-normal break-words leading-tight text-right"
+              title={reason}
+            >
+              "{reason}"
+            </span>
+          )}
+        </div>
+      );
+    }
+    if (item.status === "Cancelled") {
+      return (
+        <span className={`${size} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600`}>
+          Cancelled
+        </span>
+      );
+    }
+    return (
+      <span className={`${size} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300`}>
         {item.status || "—"}
       </span>
     );
@@ -337,48 +402,69 @@ function HODDashboard() {
     },
   ];
 
+  // ============================================================
+  // COMPACT MOBILE RENDER — Pending approvals (3 tight rows)
+  // Row 1: Name + Division | small status badge
+  // Row 2: Type · From → To | Days
+  // Row 3: View / Approve / Decline buttons
+  // ============================================================
   const mobileRender = (request) => (
-    <div className="p-4 space-y-2">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-800 dark:text-white">{request.employee}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{request.division}</p>
+    <div className="p-2.5">
+      {/* Row 1 */}
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
+            {request.employee}
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+            {request.division}
+          </p>
         </div>
-        {renderStatusBadge(request)}
+        <div className="shrink-0 text-right max-w-[55%]">
+          {renderMobileStatus(request)}
+        </div>
       </div>
-      <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          {request.type} · {request.from} → {request.to}
+
+      {/* Row 2 */}
+      <div className="flex justify-between items-center text-[11px] mb-2">
+        <span className="text-gray-700 dark:text-gray-300 truncate">
+          {request.type}
+          <span className="text-gray-400 dark:text-gray-500 mx-1">·</span>
+          {request.from}
+          <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span>
+          {request.to}
         </span>
-        <span className="font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded">
+        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
           {request.noOfDays || request.days
-            ? `${request.noOfDays || request.days} day(s)`
+            ? `${request.noOfDays || request.days}d`
             : ""}
         </span>
       </div>
-      <div className="flex gap-2 pt-1">
+
+      {/* Row 3 */}
+      <div className="flex gap-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-700">
         <button
           onClick={() => {
             setSelectedLeave(request);
             setShowPrintModal(true);
           }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-purple-500 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+          className="flex-1 px-2 py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm"
         >
-          <span>View Form</span>
+          View Form
         </button>
         {request.status === "Admin Approved" && (
           <>
             <button
               onClick={() => askApprove(request)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-green-500 text-white text-[11px] font-medium rounded-md hover:bg-green-700 transition-colors shadow-sm"
             >
-              <span>Approve</span>
+              Approve
             </button>
             <button
               onClick={() => askDecline(request)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-red-500 text-white text-[11px] font-medium rounded-md hover:bg-red-700 transition-colors shadow-sm"
             >
-              <span>Decline</span>
+              Decline
             </button>
           </>
         )}
@@ -434,32 +520,50 @@ function HODDashboard() {
     },
   ];
 
+  // ============================================================
+  // COMPACT MOBILE RENDER — All leaves (3 tight rows, View only)
+  // ============================================================
   const allLeavesMobileRender = (request) => (
-    <div className="p-4 space-y-2">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-800 dark:text-white">{request.employee}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{request.division}</p>
+    <div className="p-2.5">
+      {/* Row 1 */}
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
+            {request.employee}
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+            {request.division}
+          </p>
         </div>
-        {renderStatusBadge(request)}
+        <div className="shrink-0 text-right max-w-[55%]">
+          {renderMobileStatus(request)}
+        </div>
       </div>
-      <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          {request.type} · {request.from} → {request.to}
+
+      {/* Row 2 */}
+      <div className="flex justify-between items-center text-[11px] mb-2">
+        <span className="text-gray-700 dark:text-gray-300 truncate">
+          {request.type}
+          <span className="text-gray-400 dark:text-gray-500 mx-1">·</span>
+          {request.from}
+          <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span>
+          {request.to}
         </span>
-        <span className="font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded">
+        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
           {request.noOfDays || request.days
-            ? `${request.noOfDays || request.days} day(s)`
+            ? `${request.noOfDays || request.days}d`
             : ""}
         </span>
       </div>
-      <div className="pt-1">
+
+      {/* Row 3 */}
+      <div className="pt-1.5 border-t border-gray-100 dark:border-gray-700">
         <button
           onClick={() => {
             setSelectedLeave(request);
             setShowPrintModal(true);
           }}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-purple-500 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm"
         >
           <Eye className="w-3.5 h-3.5" />
           <span>View Form</span>

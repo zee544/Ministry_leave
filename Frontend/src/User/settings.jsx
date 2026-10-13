@@ -166,35 +166,35 @@ function Settings() {
     <div className="w-full">
       {toast && (
         <div
-          className={`fixed top-6 right-6 z-[100] px-5 py-3 text-white text-sm font-medium rounded-xl shadow-xl flex items-center gap-3 ${
+          className={`fixed top-4 right-4 sm:top-6 sm:right-6 z-[100] px-4 sm:px-5 py-2.5 sm:py-3 text-white text-xs sm:text-sm font-medium rounded-xl shadow-xl flex items-center gap-2 sm:gap-3 ${
             toastType === "error" ? "bg-red-600" : "bg-emerald-600"
           }`}
         >
-          <span className="text-base">{toastType === "error" ? "✕" : "✓"}</span>
+          <span className="text-sm sm:text-base">{toastType === "error" ? "✕" : "✓"}</span>
           <span>{toast}</span>
         </div>
       )}
 
       <div className="max-w-2xl">
-        <div className="space-y-10">
+        <div className="space-y-6 sm:space-y-10">
           <section>
-            <div className="flex items-start justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
-              <div>
-                <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="flex items-start justify-between gap-2 pb-3 sm:pb-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                   My Signature
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Upload and manage your digital signature.
                 </p>
               </div>
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-2 py-0.5 rounded">
+              <span className="shrink-0 text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-1.5 sm:px-2 py-0.5 rounded">
                 Required
               </span>
             </div>
 
-            <div className="pt-5">
+            <div className="pt-4 sm:pt-5">
               <SignatureUpload signatureKey={currentUser.name} label="Signature" />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 flex items-start gap-2">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3 flex items-start gap-2">
                 <span>
                   This signature will be automatically applied to all printed
                   leave forms you submit.
@@ -202,11 +202,11 @@ function Settings() {
               </p>
             </div>
 
-            <div className="flex justify-end mt-6 pt-5 border-t border-gray-100 dark:border-gray-700">
+            <div className="flex justify-end mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-gray-100 dark:border-gray-700">
               <button
                 onClick={handleSaveSignature}
                 disabled={savingSignature}
-                className="px-5 py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
+                className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
               >
                 {savingSignature ? (
                   <>
@@ -224,24 +224,24 @@ function Settings() {
           </section>
 
           <section>
-            <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+            <div className="pb-3 sm:pb-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
                 Account Security
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 Update your password to keep your account secure.
               </p>
             </div>
 
-            <div className="pt-5">
-              <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300">
+            <div className="pt-4 sm:pt-5">
+              <div className="flex items-center justify-between gap-2 p-3 sm:p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
+                <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 text-sm sm:text-base">
                     🔒
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">Password</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Last changed</p>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-gray-800 dark:text-white">Password</p>
+                    <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">Last changed</p>
                   </div>
                 </div>
                 <button
@@ -254,7 +254,7 @@ function Settings() {
                     });
                     setShowPasswordModal(true);
                   }}
-                  className="px-5 py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
+                  className="shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
                 >
                   Change
                 </button>
@@ -265,14 +265,14 @@ function Settings() {
       </div>
 
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 dark:bg-black/70">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 dark:border-gray-700">
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/60 dark:bg-black/70">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[92vh] overflow-y-auto">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">
                   Change Password
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Choose a strong password you haven't used before.
                 </p>
               </div>
@@ -280,16 +280,16 @@ function Settings() {
                 type="button"
                 onClick={() => setShowPasswordModal(false)}
                 disabled={isSubmitting}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition text-xl leading-none disabled:opacity-50"
+                className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition text-xl leading-none disabled:opacity-50"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handlePasswordSubmit} className="p-6 space-y-5">
+            <form onSubmit={handlePasswordSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
                   Current Password
                 </label>
                 <input
@@ -302,14 +302,14 @@ function Settings() {
                   placeholder="Enter current password"
                 />
                 {errors.currentPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1.5 block">
                     {errors.currentPassword}
                   </span>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
                   New Password
                 </label>
                 <input
@@ -322,12 +322,12 @@ function Settings() {
                   placeholder="Enter new password"
                 />
                 {errors.newPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1.5 block">
                     {errors.newPassword}
                   </span>
                 )}
                 {!errors.newPassword && passwordForm.newPassword && (
-                  <ul className="mt-2 space-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  <ul className="mt-2 space-y-0.5 text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400">
                     <li className={passwordForm.newPassword.length >= 8 ? "text-emerald-600 dark:text-emerald-400" : ""}>
                       • At least 8 characters
                     </li>
@@ -345,7 +345,7 @@ function Settings() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
                   Confirm New Password
                 </label>
                 <input
@@ -358,25 +358,25 @@ function Settings() {
                   placeholder="Re-enter new password"
                 />
                 {errors.confirmPassword && (
-                  <span className="text-xs text-red-600 dark:text-red-400 mt-1.5 block">
+                  <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 mt-1.5 block">
                     {errors.confirmPassword}
                   </span>
                 )}
               </div>
 
-              <div className="flex gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex gap-2 sm:gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                 <button
                   type="button"
                   onClick={() => setShowPasswordModal(false)}
                   disabled={isSubmitting}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-[#006A4E] dark:bg-emerald-600 rounded-lg hover:bg-[#1B5448] dark:hover:bg-emerald-700 transition disabled:opacity-60 shadow-sm"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-[#006A4E] dark:bg-emerald-600 rounded-lg hover:bg-[#1B5448] dark:hover:bg-emerald-700 transition disabled:opacity-60 shadow-sm"
                 >
                   {isSubmitting ? "Updating..." : "Update Password"}
                 </button>

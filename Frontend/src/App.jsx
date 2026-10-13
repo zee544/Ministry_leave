@@ -384,7 +384,7 @@ function App() {
                 }}
                 placeholder="youremail@gmail.com"
                 disabled={isSending}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 mb-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full rounded-lg text-gray-400 border border-gray-300 px-3 py-2 mb-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
 
               {forgotMsg && (
