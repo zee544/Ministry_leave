@@ -32,7 +32,7 @@ function Employee({ openCreate }) {
         setToast(`${emp?.name || "Employee"} status toggled.`);
         setTimeout(() => setToast(""), 3000);
     };
-
+2
     const handleEdit = (emp) => {
         setEditing(emp.id);
         setEditForm({ ...emp });

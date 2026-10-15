@@ -2,11 +2,13 @@ import { apiUrl } from "../api.js";
 import { useState, useEffect } from "react";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
+import { useLeaves } from "../hooks/LeaveContext.jsx";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
 
 function Settings() {
-  const { currentUser } = useUser();
+  const { currentUser, leaveEntitlements } = useUser();
   const { getSignature } = useSignatures();
+  const { leaves } = useLeaves();
 
   const [profile, setProfile] = useState(null);
   const [hodInfo, setHodInfo] = useState(null);
@@ -76,6 +78,76 @@ function Settings() {
     loadData();
   }, []);
 
+  // ============================================================
+  // ⭐ LEAVE BALANCE CALCULATION
+  //    Only count leaves with status === "Approved" (HOD final approval).
+  //    "Admin Approved" is NOT counted — the admin's own leave request
+  //    shouldn't affect their balance until the HOD approves it.
+  // ============================================================
+  const myApprovedLeaves = leaves.filter(
+    (l) =>
+      Number(l.applicantUserId ?? l.applicant_user_id) === Number(currentUser.id) &&
+      (l.applicantRole ?? l.applicant_role) === currentUser.role &&
+      l.status === "Approved"
+  );
+
+  const getLeaveDays = (leave) => {
+    if (leave.noOfDays) return parseFloat(leave.noOfDays) || 0;
+    if (leave.days) return parseFloat(leave.days) || 0;
+    if (leave.type === "Half-day") return 0.5;
+    if (!leave.from || !leave.to) return 0;
+    const start = new Date(leave.from);
+    const end = new Date(leave.to);
+    if (isNaN(start) || isNaN(end)) return 0;
+    return Math.max(1, Math.round((end - start) / 86400000) + 1);
+  };
+
+  const buildBalance = (type) => {
+    const entitlement = leaveEntitlements?.[type];
+    if (!entitlement) return null;
+    const used = myApprovedLeaves
+      .filter((l) => l.type === type)
+      .reduce((sum, l) => sum + getLeaveDays(l), 0);
+    const remaining = Math.max(0, entitlement.total - used);
+    const pct =
+      entitlement.total > 0
+        ? Math.round((remaining / entitlement.total) * 100)
+        : 0;
+    return { type, ...entitlement, used, remaining, pct };
+  };
+
+  const annual = buildBalance("Annual");
+  const casual = buildBalance("Casual");
+  const other = buildBalance("Other");
+
+  const halfDayCount = myApprovedLeaves.filter((l) => l.type === "Half-day").length;
+
+  const balanceRows = [annual, casual, other].filter(Boolean).map((b) => ({
+    label:
+      b.type === "Annual"
+        ? "Vacation Leave"
+        : b.type.length > 6
+          ? b.type
+          : `${b.type} Leave`,
+    remaining: b.remaining,
+    total: b.total,
+    pct: b.pct,
+    color: b.color,
+  }));
+
+  balanceRows.push({
+    label: "Half-day Leave",
+    remaining: null,
+    total: null,
+    pct: 0,
+    color: "bg-purple-500",
+    isHalfDay: true,
+    used: halfDayCount,
+  });
+
+  // ============================================================
+  // PROFILE EDIT HANDLERS
+  // ============================================================
   const handleStartEditProfile = () => {
     setEditForm({
       name: profile?.name || "",
@@ -385,6 +457,52 @@ function Settings() {
             </div>
           </div>
 
+          {/* ---------- Leave Balance ---------- */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
+              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+                Leave Balance
+              </h2>
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Your leave entitlements and used days for this year.
+              </p>
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-3.5">
+              {balanceRows.map((b) => (
+                <div key={b.label}>
+                  {b.isHalfDay ? (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                        {b.label}
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+                        {b.used} time{b.used !== 1 ? "s" : ""} taken
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                          {b.label}
+                        </span>
+                        <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+                          {b.remaining} / {b.total} days
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                        <div
+                          className={`${b.color} h-2 rounded-full transition-all`}
+                          style={{ width: `${b.pct}%` }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* ---------- Division Information ---------- */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
@@ -613,7 +731,9 @@ function InfoRow({ label, value }) {
       <p className="text-[10px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
         {label}
       </p>
-      <p className="text-xs sm:text-sm font-medium text-gray-800 dark:text-white mt-0.5 sm:mt-1">{value || "—"}</p>
+      <p className="text-xs sm:text-sm font-medium text-gray-800 dark:text-white mt-0.5 sm:mt-1">
+        {value || "—"}
+      </p>
     </div>
   );
 }

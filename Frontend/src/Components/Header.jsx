@@ -71,6 +71,8 @@ function Header({ activeTab, onMenuToggle }) {
                             {activeTab === "dashboard" && "Dashboard"}
                             {activeTab === "employees" && "Employees"}
                             {activeTab === "leaves" && "Leave Requests"}
+                            {activeTab === "apply-leave" && "Apply for Leave"}
+                            {activeTab === "my-leaves" && "My Leave Applications"}
                             {activeTab === "reports" && "Reports"}
                             {activeTab === "calendar" && "Calendar"}
                             {activeTab === "settings" && "Settings"}

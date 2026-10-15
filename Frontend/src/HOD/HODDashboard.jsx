@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Eye,
@@ -49,6 +49,8 @@ function HODDashboard() {
     leave: null,
     action: "approve",
   });
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const approvalInFlight = useRef(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -123,91 +125,91 @@ function HODDashboard() {
   const closeModal = () => setConfirmModal({ open: false, leave: null, action: "approve" });
 
   const handleApprove = async (leave) => {
-    try {
-      await hodApprove(leave.id, "approve");
+    await hodApprove(leave.id, "approve");
 
-      addNotification(
-        `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been FINAL APPROVED by the Head of Division.`,
-        "status_update",
-        leave.employee,
-        leave.division,
-        "/userdashboard?tab=myleaves"
-      );
+    addNotification(
+      `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been FINAL APPROVED by the Head of Division.`,
+      "status_update",
+      leave.employee,
+      leave.division,
+      "/userdashboard?tab=myleaves"
+    );
 
-      if (leave.actingOfficer) {
-        addNotification(
-          `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been FINAL APPROVED by the Head of Division.`,
-          "status_update",
-          leave.actingOfficer,
-          leave.division,
-          "/userdashboard?tab=actingapprovals"
-        );
-      }
-
+    if (leave.actingOfficer) {
       addNotification(
         `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been FINAL APPROVED by the Head of Division.`,
-        "leave_application",
-        "admin",
+        "status_update",
+        leave.actingOfficer,
         leave.division,
-        "/Admindashboard?tab=leaves"
+        "/userdashboard?tab=actingapprovals"
       );
-
-      setSelectedLeave({ ...leave, status: "Approved" });
-      setShowPrintModal(true);
-    } catch (error) {
-      alert(`Failed to approve: ${error.message}`);
     }
+
+    addNotification(
+      `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been FINAL APPROVED by the Head of Division.`,
+      "leave_application",
+      "admin",
+      leave.division,
+      "/Admindashboard?tab=leaves"
+    );
+
+    setSelectedLeave({ ...leave, status: "Approved" });
+    setShowPrintModal(true);
   };
   const handleDecline = async (leave, reason) => {
-    try {
-      await hodApprove(leave.id, "decline", { reason: reason || null });
+    await hodApprove(leave.id, "decline", { reason: reason || null });
 
-      const reasonText = reason ? ` Reason: ${reason}` : "";
+    const reasonText = reason ? ` Reason: ${reason}` : "";
 
-      addNotification(
-        `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been DECLINED by the Head of Division.${reasonText}`,
-        "status_update",
-        leave.employee,
-        leave.division,
-        "/userdashboard?tab=myleaves"
-      );
+    addNotification(
+      `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been DECLINED by the Head of Division.${reasonText}`,
+      "status_update",
+      leave.employee,
+      leave.division,
+      "/userdashboard?tab=myleaves"
+    );
 
-      if (leave.actingOfficer) {
-        addNotification(
-          `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by the Head of Division.${reasonText}`,
-          "status_update",
-          leave.actingOfficer,
-          leave.division,
-          "/userdashboard?tab=actingapprovals"
-        );
-      }
-
+    if (leave.actingOfficer) {
       addNotification(
         `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by the Head of Division.${reasonText}`,
-        "leave_application",
-        "admin",
+        "status_update",
+        leave.actingOfficer,
         leave.division,
-        "/Admindashboard?tab=leaves"
+        "/userdashboard?tab=actingapprovals"
       );
-
-      setSelectedLeave({ ...leave, status: "Declined" });
-      setShowPrintModal(true);
-    } catch (error) {
-      alert(`Failed to decline: ${error.message}`);
     }
+
+    addNotification(
+      `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by the Head of Division.${reasonText}`,
+      "leave_application",
+      "admin",
+      leave.division,
+      "/Admindashboard?tab=leaves"
+    );
+
+    setSelectedLeave({ ...leave, status: "Declined" });
+    setShowPrintModal(true);
   };
 
   const processAction = async (reason) => {
     const { leave, action } = confirmModal;
-    if (!leave) return;
+    if (!leave || approvalInFlight.current) return;
 
-    if (action === "approve") {
-      await handleApprove(leave);
-    } else {
-      await handleDecline(leave, reason);
+    approvalInFlight.current = true;
+    setApprovalLoading(true);
+    try {
+      if (action === "approve") {
+        await handleApprove(leave);
+      } else {
+        await handleDecline(leave, reason);
+      }
+      closeModal();
+    } catch (error) {
+      alert(`Failed to ${action === "approve" ? "approve" : "decline"}: ${error.message}`);
+    } finally {
+      approvalInFlight.current = false;
+      setApprovalLoading(false);
     }
-
-    closeModal();
   };
 
   // ---- Desktop status renderer (original size, unchanged) ----
@@ -832,6 +834,7 @@ function HODDashboard() {
         open={confirmModal.open}
         onClose={closeModal}
         onConfirm={processAction}
+        loading={approvalLoading}
         tone={confirmModal.action === "approve" ? "approve" : "decline"}
         requireReason={confirmModal.action === "decline"}
         title={confirmModal.action === "approve"

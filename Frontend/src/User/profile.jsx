@@ -3,7 +3,7 @@ import { useUser } from "../hooks/UserContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { apiUrl } from "../api.js";
 function Profile() {
-  const { currentUser, leaveEntitlements, fetchEmployees } = useUser();
+  const { currentUser, leaveEntitlements, login } = useUser();
   const { leaves } = useLeaves();
 
   const [profile, setProfile] = useState(null);
@@ -54,7 +54,8 @@ function Profile() {
 
   const myLeaves = leaves.filter(
     (l) =>
-      l.appliedBy === currentUser.name &&
+      Number(l.applicantUserId ?? l.applicant_user_id) === Number(currentUser.id) &&
+      (l.applicantRole ?? l.applicant_role) === currentUser.role &&
       (l.status === "Approved" || l.status === "Admin Approved")
   );
 
@@ -136,7 +137,6 @@ function Profile() {
     const errs = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!editForm.name.trim()) errs.name = "Name is required";
     if (!editForm.email.trim()) errs.email = "Email is required";
     else if (!emailRegex.test(editForm.email.trim()))
       errs.email = "Invalid email format";
@@ -158,25 +158,21 @@ function Profile() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: editForm.name.trim(),
-          email: editForm.email.trim(),
-          designation: editForm.designation.trim(),
-          appointment_date: editForm.appointment_date || null,
-        }),
+  email: editForm.email.trim(),
+  designation: editForm.designation.trim(),
+  appointment_date: editForm.appointment_date || null,
+}),
       });
 
       const data = await res.json();
 
       if (res.ok) {
         setProfile(data.profile);
+        login(data.profile, token);
         setIsEditing(false);
         setToast("✅ Profile updated successfully");
         setTimeout(() => setToast(""), 4000);
 
-        const token2 = localStorage.getItem("token");
-        if (fetchEmployees && token2) {
-          await fetchEmployees(token2);
-        }
       } else {
         setEditErrors({ general: data.message || "Failed to update profile." });
       }
@@ -279,18 +275,18 @@ function Profile() {
           {isEditing ? (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-gray-600 dark:text-gray-300 block mb-1">
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) => handleEditChange("name", e.target.value)}
-                  className={inputClass("name")}
-                />
-                {editErrors.name && (
-                  <span className="text-xs text-red-500 mt-1 block">{editErrors.name}</span>
-                )}
+                <div>
+  <label className="text-xs font-medium text-gray-600 dark:text-gray-300 block mb-1">
+    Name
+  </label>
+
+  <input
+    type="text"
+    value={editForm.name}
+    readOnly
+    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm cursor-not-allowed"
+  />
+</div>
               </div>
 
               <div>

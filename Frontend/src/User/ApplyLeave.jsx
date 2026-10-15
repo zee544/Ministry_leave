@@ -9,6 +9,7 @@ function ApplyLeave() {
     const { addNotification } = useNotifications();
     const { addLeave } = useLeaves();
     const { currentUser, employees, fetchEmployees } = useUser();
+    const isAdmin = currentUser?.role === "admin";
     const [formData, setFormData] = useState({
         leaveType: "",
         reason: "",
@@ -27,6 +28,10 @@ function ApplyLeave() {
 
     useEffect(() => {
         const loadEmployees = async () => {
+            if (currentUser?.role !== "employee") {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             try {
                 const token = localStorage.getItem("token");
@@ -40,7 +45,7 @@ function ApplyLeave() {
             }
         };
         loadEmployees();
-    }, []);
+    }, [currentUser?.role]);
 
     const fetchHolidaysForYear = async (year) => {
         if (holidayCache[year]) return holidayCache[year];
@@ -69,18 +74,16 @@ function ApplyLeave() {
         const now = new Date().getFullYear();
         fetchHolidaysForYear(now);
         fetchHolidaysForYear(now + 1);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
         const { fromDate, toDate } = formData;
         if (!fromDate || !toDate) return;
         yearsInRange(fromDate, toDate).forEach((y) => fetchHolidaysForYear(y));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [formData.fromDate, formData.toDate]);
 
     useEffect(() => {
-        if (!employees || employees.length === 0 || !currentUser) {
+        if (!employees || employees.length === 0 || !currentUser || isAdmin) {
             setActingOfficers([]);
             return;
         }
@@ -100,7 +103,7 @@ function ApplyLeave() {
         });
 
         setActingOfficers(filtered);
-    }, [employees, currentUser]);
+    }, [employees, currentUser, isAdmin]);
 
     const getAllHolidaysForRange = (from, to) => {
         const years = yearsInRange(from, to);
@@ -148,7 +151,7 @@ function ApplyLeave() {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.noOfDays || !formData.actingOfficer) {
+        if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.noOfDays) {
             alert("Please fill in all required fields");
             return;
         }
@@ -156,6 +159,8 @@ function ApplyLeave() {
         setIsSubmitting(true);
 
         try {
+            const hasActingOfficer = !isAdmin && Boolean(formData.actingOfficer?.trim());
+
             const leaveData = {
                 employee: currentUser.name,
                 division: currentUser.division,
@@ -165,36 +170,65 @@ function ApplyLeave() {
                 noOfDays: formData.noOfDays,
                 days: formData.noOfDays,
                 appliedBy: currentUser.name,
-                actingOfficer: formData.actingOfficer,
+                actingOfficer: hasActingOfficer ? formData.actingOfficer : null,
+                applicantUserId: currentUser.id,
+                applicantRole: currentUser.role,
                 reason: formData.reason,
                 address: formData.address,
                 additionalInfo: formData.additionalInfo,
-                status: "Pending Acting Officer",
+                status: isAdmin
+                    ? "Admin Approved"
+                    : (hasActingOfficer ? "Pending Acting Officer" : "Pending"),
             };
 
             const savedLeave = await addLeave(leaveData);
             console.log("Leave submitted successfully:", savedLeave);
 
-            addNotification(
-                `You have been assigned as Acting Officer for ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}). Please confirm.`,
-                "acting_officer",
-                formData.actingOfficer,
-                currentUser.division,
-            );
+            if (isAdmin) {
+                addNotification(
+                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) is awaiting HOD approval.`,
+                    "leave_application",
+                    "hod",
+                    currentUser.division,
+                );
+            } else if (hasActingOfficer) {
+                // Acting officer selected — normal flow
+                addNotification(
+                    `You have been assigned as Acting Officer for ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}). Please confirm.`,
+                    "acting_officer",
+                    formData.actingOfficer,
+                    currentUser.division,
+                );
 
-            addNotification(
-                `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting confirmation from ${formData.actingOfficer}.`,
-                "status_update",
-                currentUser.name,
-                currentUser.division,
-            );
+                addNotification(
+                    `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting confirmation from ${formData.actingOfficer}.`,
+                    "status_update",
+                    currentUser.name,
+                    currentUser.division,
+                );
 
-            addNotification(
-                `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Acting Officer confirmation.`,
-                "leave_application",
-                "admin",
-                currentUser.division,
-            );
+                addNotification(
+                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Acting Officer confirmation.`,
+                    "leave_application",
+                    "admin",
+                    currentUser.division,
+                );
+            } else {
+                // No acting officer — direct to Admin
+                addNotification(
+                    `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Admin approval.`,
+                    "status_update",
+                    currentUser.name,
+                    currentUser.division,
+                );
+
+                addNotification(
+                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting your approval.`,
+                    "leave_application",
+                    "admin",
+                    currentUser.division,
+                );
+            }
 
             setShowSuccess(true);
             setTimeout(() => setShowSuccess(false), 5000);
@@ -241,7 +275,11 @@ function ApplyLeave() {
                             Leave Application Submitted!
                         </p>
                         <p className="text-[10px] sm:text-xs text-green-600 dark:text-green-400">
-                            Your request has been forwarded to your acting officer.
+                            {isAdmin
+                                ? "Your request has been forwarded directly to your division HOD."
+                                : formData.actingOfficer
+                                    ? "Your request has been forwarded to your acting officer."
+                                    : "Your request has been forwarded directly to your Admin."}
                         </p>
                     </div>
                 </div>
@@ -319,35 +357,41 @@ function ApplyLeave() {
                             className={inputBaseClass}
                         />
                     </div>
-                    <div className="col-span-1 sm:col-span-2">
-                        <label className={labelClass}>Acting Officer *</label>
-                        <select
-                            name="actingOfficer"
-                            value={formData.actingOfficer}
-                            onChange={handleChange}
-                            className={inputBaseClass}
-                        >
-                            <option value="">Select acting officer</option>
-                            {loading ? (
-                                <option disabled>Loading officers...</option>
-                            ) : actingOfficers.length === 0 ? (
-                                <option disabled>No officers available in your division</option>
-                            ) : (
-                                actingOfficers.map((officer) => (
-                                    <option key={officer.id} value={officer.name}>
-                                        {officer.name} — {officer.designation || "Officer"}
-                                    </option>
-                                ))
-                            )}
-                        </select>
-                        <p className="text-[10px] sm:text-xs text-gray-400 dark:text-gray-400 mt-1">
-                            {loading
-                                ? "Loading..."
-                                : actingOfficers.length === 0
-                                    ? "No active officers in your division"
-                                    : `${actingOfficers.length} officer(s) from ${currentUser?.division}`}
-                        </p>
-                    </div>
+
+                    {!isAdmin && (
+                        <div className="col-span-1 sm:col-span-2">
+                            <label className={labelClass}>Acting Officer (Optional)</label>
+                            <select
+                                name="actingOfficer"
+                                value={formData.actingOfficer}
+                                onChange={handleChange}
+                                className={inputBaseClass}
+                            >
+                                <option value="">None — submit directly to Admin</option>
+                                {loading ? (
+                                    <option disabled>Loading officers...</option>
+                                ) : actingOfficers.length === 0 ? (
+                                    <option disabled>No officers available in your division</option>
+                                ) : (
+                                    actingOfficers.map((officer) => (
+                                        <option key={officer.id} value={officer.name}>
+                                            {officer.name} — {officer.designation || "Officer"}
+                                        </option>
+                                    ))
+                                )}
+                            </select>
+                            <p className="text-[10px] sm:text-xs text-gray-400 dark:text-gray-400 mt-1">
+                                {loading
+                                    ? "Loading..."
+                                    : actingOfficers.length === 0
+                                        ? "No active officers in your division"
+                                        : formData.actingOfficer
+                                            ? `Will be sent to ${formData.actingOfficer} for confirmation first`
+                                            : "Leave empty to send directly to Admin"}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="col-span-1 sm:col-span-2">
                         <label className={labelClass}>Additional Information</label>
                         <textarea
@@ -362,7 +406,7 @@ function ApplyLeave() {
                     <div className="col-span-1 sm:col-span-2">
                         <button
                             type="submit"
-                            disabled={isSubmitting || loading || actingOfficers.length === 0}
+                            disabled={isSubmitting || loading}
                             className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-teal-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? "Submitting..." : "Submit Leave Request"}

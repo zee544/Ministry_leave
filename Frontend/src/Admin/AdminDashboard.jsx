@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Check,
@@ -25,6 +25,8 @@ import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
+import ApplyLeave from "../User/ApplyLeave.jsx";
+import Myleaves from "../User/myleaves.jsx";
 
 function AdminDashboard() {
   const { leaves, updateLeaveStatus, fetchLeaves } = useLeaves();
@@ -54,6 +56,8 @@ function AdminDashboard() {
     leave: null,
     action: "approve",
   });
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const approvalInFlight = useRef(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -74,6 +78,7 @@ function AdminDashboard() {
 
   const userDivision = currentUser?.division || "Administration";
   const divisionLeaves = leaves.filter((l) => {
+    if (l.applicantRole === "admin" || l.applicant_role === "admin") return false;
     const leaveDiv = (l.division || "").toLowerCase();
     const userDiv = userDivision.toLowerCase();
     return (
@@ -141,8 +146,8 @@ function AdminDashboard() {
   const closeModal = () =>
     setConfirmModal({ open: false, leave: null, action: "approve" });
 
-  const handlePreApprove = (item) => {
-    updateLeaveStatus(item.id, "Admin Approved", { recommendedByAdmin: true });
+  const handlePreApprove = async (item) => {
+    await updateLeaveStatus(item.id, "Admin Approved", { recommendedByAdmin: true });
 
     addNotification(
       `Leave application: ${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been pre-approved by Admin and is now awaiting your final approval.`,
@@ -171,8 +176,8 @@ function AdminDashboard() {
     }
   };
 
-  const handleDecline = (item, reason) => {
-    updateLeaveStatus(item.id, "Declined", { declinedBy: "Admin" , reason: reason || null,  });
+  const handleDecline = async (item, reason) => {
+    await updateLeaveStatus(item.id, "Declined", { declinedBy: "Admin", reason: reason || null });
 
     const reasonText = reason ? ` Reason: ${reason}` : "";
 
@@ -203,17 +208,25 @@ function AdminDashboard() {
     );
   };
 
-  const processAction = (reason) => {
+  const processAction = async (reason) => {
     const { leave: item, action } = confirmModal;
-    if (!item) return;
+    if (!item || approvalInFlight.current) return;
 
-    if (action === "approve") {
-      handlePreApprove(item);
-    } else {
-      handleDecline(item, reason);
+    approvalInFlight.current = true;
+    setApprovalLoading(true);
+    try {
+      if (action === "approve") {
+        await handlePreApprove(item);
+      } else {
+        await handleDecline(item, reason);
+      }
+      closeModal();
+    } catch (error) {
+      alert(`Failed to ${action === "approve" ? "approve" : "decline"}: ${error.message}`);
+    } finally {
+      approvalInFlight.current = false;
+      setApprovalLoading(false);
     }
-
-    closeModal();
   };
 
   const dashboardColumns = [
@@ -672,6 +685,8 @@ function AdminDashboard() {
                 <Employee openCreate={openCreateEmployee} />
               )}
               {activeTab === "leaves" && <LeaveApprove />}
+              {activeTab === "apply-leave" && <ApplyLeave />}
+              {activeTab === "my-leaves" && <Myleaves />}
               {activeTab === "reports" && <Reports />}
               {activeTab === "settings" && <Settings />}
             </div>
@@ -691,6 +706,7 @@ function AdminDashboard() {
         open={confirmModal.open}
         onClose={closeModal}
         onConfirm={processAction}
+        loading={approvalLoading}
         tone={confirmModal.action === "approve" ? "approve" : "decline"}
         requireReason={confirmModal.action === "decline"}
         title={confirmModal.action === "approve"

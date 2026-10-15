@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useNotifications } from "../hooks/NotificationContext.jsx";
@@ -7,7 +7,7 @@ import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
 
 function ActingApprovals() {
-    const { confirmActingOfficer, getLeavesByActingOfficer, fetchLeaves, fetchActingOfficerLeaves, leaves } = useLeaves();
+    const { confirmActingOfficer, getLeavesByActingOfficer, fetchLeaves, fetchActingOfficerLeaves } = useLeaves();
     const { addNotification } = useNotifications();
     const { currentUser } = useUser();
     const [toast, setToast] = useState("");
@@ -15,6 +15,7 @@ function ActingApprovals() {
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const actionInFlight = useRef(false);
 
     const [confirmModal, setConfirmModal] = useState({
         open: false,
@@ -37,7 +38,7 @@ function ActingApprovals() {
             }
         };
         loadLeaves();
-    }, []);
+    }, [fetchLeaves, fetchActingOfficerLeaves]);
 
     const myAssignments = getLeavesByActingOfficer(currentUser.name);
 
@@ -53,7 +54,7 @@ function ActingApprovals() {
     const askDecline = (leave) => setConfirmModal({ open: true, leave, action: "decline" });
     const closeModal = () => setConfirmModal({ open: false, leave: null, action: "confirm" });
 
-    const handleConfirm = async (leave, reason) => {
+    const handleConfirm = async (leave) => {
         setLoading(true);
         setError(null);
 
@@ -84,7 +85,6 @@ function ActingApprovals() {
                 leave.division
             );
 
-            if (fetchLeaves) await fetchLeaves();
         } catch (error) {
             console.error("Error confirming leave:", error);
             setError(error.message);
@@ -128,7 +128,6 @@ function ActingApprovals() {
                 leave.division
             );
 
-            if (fetchLeaves) await fetchLeaves();
         } catch (error) {
             console.error("Error declining leave:", error);
             setError(error.message);
@@ -141,15 +140,19 @@ function ActingApprovals() {
 
     const processAction = async (reason) => {
         const { leave, action } = confirmModal;
-        if (!leave) return;
+        if (!leave || actionInFlight.current) return;
 
-        if (action === "confirm") {
-            await handleConfirm(leave, reason);
-        } else {
-            await handleDecline(leave, reason);
+        actionInFlight.current = true;
+        try {
+            if (action === "confirm") {
+                await handleConfirm(leave);
+            } else {
+                await handleDecline(leave, reason);
+            }
+            closeModal();
+        } finally {
+            actionInFlight.current = false;
         }
-
-        closeModal();
     };
 
     // ---- Status badge renderer (shared between history table & mobile card) ----

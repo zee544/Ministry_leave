@@ -184,6 +184,8 @@ async function setupDatabase() {
         to_date DATE NOT NULL,
         no_of_days DECIMAL(4, 1) NOT NULL,
         acting_officer VARCHAR(100),
+        applicant_user_id INT DEFAULT NULL,
+        applicant_role VARCHAR(20) DEFAULT NULL,
         status VARCHAR(50) DEFAULT 'Pending',
         applied_by VARCHAR(100) NOT NULL,
         applied_on DATE NOT NULL,
@@ -196,7 +198,8 @@ async function setupDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_leave_division (division),
         INDEX idx_leave_status (status),
-        INDEX idx_leave_applied_on (applied_on)
+        INDEX idx_leave_applied_on (applied_on),
+        INDEX idx_leave_applicant (applicant_user_id, applicant_role)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
@@ -240,9 +243,12 @@ async function setupDatabase() {
           `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${definition}`
         );
         console.log(`[OK] Added missing column ${tableName}.${columnName}.`);
+        return true;
       }
+      return false;
     };
 
+    let applicantIdentitySchemaAdded = false;
     for (const [tableName, columnName, definition] of [
       ['admins', 'signature_image', 'MEDIUMTEXT NULL'],
       ['hod', 'signature_image', 'MEDIUMTEXT NULL'],
@@ -251,8 +257,58 @@ async function setupDatabase() {
       ['employees', 'signature_image', 'MEDIUMTEXT NULL'],
       ['leaves', 'decline_reason', 'TEXT NULL'],
       ['leaves', 'acting_officer_confirmed', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+      ['leaves', 'applicant_user_id', 'INT NULL'],
+      ['leaves', 'applicant_role', 'VARCHAR(20) NULL'],
     ]) {
-      await ensureColumn(tableName, columnName, definition);
+      const wasAdded = await ensureColumn(tableName, columnName, definition);
+      if (tableName === 'leaves' && ['applicant_user_id', 'applicant_role'].includes(columnName)) {
+        applicantIdentitySchemaAdded ||= wasAdded;
+      }
+    }
+
+    const [applicantIndexes] = await conn.query(
+      `SELECT INDEX_NAME
+       FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'leaves'
+         AND INDEX_NAME = 'idx_leave_applicant'`,
+      [DB_CONFIG.database]
+    );
+    if (applicantIndexes.length === 0) {
+      await conn.query(
+        'ALTER TABLE leaves ADD INDEX idx_leave_applicant (applicant_user_id, applicant_role)'
+      );
+      console.log('[OK] Added leave applicant lookup index.');
+    }
+
+    if (applicantIdentitySchemaAdded) {
+      for (const [tableName, role, alias] of [
+        ['employees', 'employee', 'e'],
+        ['admins', 'admin', 'a'],
+        ['hod', 'hod', 'h'],
+      ]) {
+        const candidateCounts = [
+         ['employees', 'e2'],
+         ['admins', 'a2'],
+         ['hod', 'h2'],
+        ].map(([candidateTable, candidateAlias]) =>
+         `(SELECT COUNT(*) FROM \`${candidateTable}\` ${candidateAlias}
+           WHERE BINARY LOWER(TRIM(${candidateAlias}.name)) = BINARY LOWER(TRIM(l.applied_by))
+             AND BINARY LOWER(TRIM(${candidateAlias}.division)) = BINARY LOWER(TRIM(l.division)))`
+        );
+
+        await conn.query(
+         `UPDATE leaves l
+          INNER JOIN \`${tableName}\` ${alias}
+            ON BINARY LOWER(TRIM(${alias}.name)) = BINARY LOWER(TRIM(l.applied_by))
+           AND BINARY LOWER(TRIM(${alias}.division)) = BINARY LOWER(TRIM(l.division))
+          SET l.applicant_user_id = ${alias}.id,
+              l.applicant_role = ?
+          WHERE l.applicant_user_id IS NULL
+            AND l.applicant_role IS NULL
+            AND (${candidateCounts.join(' + ')}) = 1`,
+         [role]
+        );
+      }
     }
     console.log('[OK] Tables created or verified.');
 

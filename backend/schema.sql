@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS `leaves` (
   `to_date` DATE NOT NULL,
   `no_of_days` DECIMAL(4, 1) NOT NULL,
   `acting_officer` VARCHAR(100),
+  `applicant_user_id` INT DEFAULT NULL,
+  `applicant_role` VARCHAR(20) DEFAULT NULL,
   `status` VARCHAR(50) DEFAULT 'Pending',
   `applied_by` VARCHAR(100) NOT NULL,
   `applied_on` DATE NOT NULL,
@@ -128,7 +130,8 @@ CREATE TABLE IF NOT EXISTS `leaves` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_leave_division` (`division`),
   INDEX `idx_leave_status` (`status`),
-  INDEX `idx_leave_applied_on` (`applied_on`)
+  INDEX `idx_leave_applied_on` (`applied_on`),
+  INDEX `idx_leave_applicant` (`applicant_user_id`, `applicant_role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------

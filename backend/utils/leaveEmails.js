@@ -21,7 +21,6 @@ function emailAction(path, label) {
 async function findEmployeeEmail(name, division) {
   if (!name) return null;
 
-  // 1) Try employees table
   const [empRows] = await pool.query(
     `SELECT email FROM employees 
      WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) 
@@ -98,6 +97,50 @@ async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
           
           <p style="color: #475569; margin-top: 16px;">Please log in to the system to <strong>confirm</strong> or <strong>decline</strong> this assignment.</p>
           
+          ${action.html}
+        </div>
+      `,
+    }),
+  });
+}
+
+// ═══════════════════════════════════════════════
+// STAGE 1b — Employee submits leave WITHOUT acting officer → notify Admin directly
+// ═══════════════════════════════════════════════
+async function sendAdminNewLeaveEmail(leave) {
+  const { employee, division, type, from, to, noOfDays, reason, address } = leave;
+
+  const email = await findDivisionAdminEmail(division);
+  if (!email) {
+    throw new Error('Division admin email address was not found.');
+  }
+
+  const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
+
+  await sendEmail({
+    to: email,
+    subject: `New Leave Application — ${employee} (${division})`,
+    text: `${employee} has submitted a ${type} leave from ${from} to ${to} directly to you (no acting officer was assigned). Sign in to review: ${action.url}`,
+    html: wrapTemplate({
+      title: 'New Leave Application — Direct to Admin',
+      accentColor: '#2563eb',
+      bodyHtml: `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
+          <p style="margin-bottom: 10px;">Hello <strong style="color: #2563eb;">Administrator</strong>,</p>
+          <p style="color: #475569; margin-bottom: 16px;">A new leave application has been submitted <strong>directly to you</strong> (no acting officer was assigned).</p>
+
+          <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
+            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${employee}</td></tr>
+            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Division</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${division}</td></tr>
+            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${type}</td></tr>
+            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${from}</td></tr>
+            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${to}</td></tr>
+            <tr><td style="padding:9px 12px; background:#f8fafc; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Days</strong></td><td style="padding:9px 12px; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${noOfDays}</td></tr>
+            ${reason ? `<tr><td style="padding:9px 12px; background:#f8fafc; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Reason</strong></td><td style="padding:9px 12px; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${reason}</td></tr>` : ''}
+            ${address ? `<tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #1e293b;">${address}</td></tr>` : ''}
+          </table>
+
+          <p style="color: #475569; margin-top: 16px;">Please log in to the Ministry Leave System to review and approve this request.</p>
           ${action.html}
         </div>
       `,
@@ -253,7 +296,6 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
 // STAGE 4a — HOD APPROVED → notify Employee + Acting Officer
 // ═══════════════════════════════════════════════
 async function sendFinalApprovalEmails(leave) {
-  // ─── EMAIL 1: to Employee (personal approval) ───
   const employeeEmail = await findEmployeeEmail(leave.employee, leave.division);
   if (!employeeEmail) throw new Error('Employee email address was not found.');
   const employeeAction = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
@@ -290,7 +332,6 @@ async function sendFinalApprovalEmails(leave) {
     deliveryErrors.push(error);
   }
 
-  // ─── EMAIL 2: to Acting Officer (with full details) ───
   if (leave.actingOfficer) {
     const aoEmail = await findEmployeeEmail(leave.actingOfficer, leave.division);
     if (!aoEmail) throw new Error('Acting officer email address was not found.');
@@ -439,4 +480,5 @@ module.exports = {
   sendFinalApprovalEmails,
   sendEmployeeDeclinedByHodEmail,
   sendActingOfficerCancelledEmail,
+  sendAdminNewLeaveEmail,
 };

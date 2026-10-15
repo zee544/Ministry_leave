@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
@@ -18,16 +18,20 @@ function LeaveApprove() {
         leave: null,
         action: "approve",
     });
+    const [approvalLoading, setApprovalLoading] = useState(false);
+    const approvalInFlight = useRef(false);
 
     const userDivision = currentUser?.division || "Administration";
-    const divisionLeaves = leaves.filter((l) => l.division === userDivision);
+    const divisionLeaves = leaves.filter(
+        (l) => l.division === userDivision && (l.applicantRole ?? l.applicant_role) !== "admin"
+    );
 
     const askApprove = (item) => setConfirmModal({ open: true, leave: item, action: "approve" });
     const askDecline = (item) => setConfirmModal({ open: true, leave: item, action: "decline" });
     const closeModal = () => setConfirmModal({ open: false, leave: null, action: "approve" });
 
-    const handleApprove = (item) => {
-        updateLeaveStatus(item.id, "Admin Approved", { recommendedByAdmin: true });
+    const handleApprove = async (item) => {
+        await updateLeaveStatus(item.id, "Admin Approved", { recommendedByAdmin: true });
 
         addNotification(
             `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been pre-approved by Admin and is now awaiting your final approval.`,
@@ -52,8 +56,8 @@ function LeaveApprove() {
         }
     };
 
-    const handleDecline = (item, reason) => {
-        updateLeaveStatus(item.id, "Declined", { declinedBy: "Admin" });
+    const handleDecline = async (item, reason) => {
+        await updateLeaveStatus(item.id, "Declined", { declinedBy: "Admin", reason: reason || null });
 
         const reasonText = reason ? ` Reason: ${reason}` : "";
 
@@ -81,17 +85,25 @@ function LeaveApprove() {
         );
     };
 
-    const processAction = (reason) => {
+    const processAction = async (reason) => {
         const { leave: item, action } = confirmModal;
-        if (!item) return;
+        if (!item || approvalInFlight.current) return;
 
-        if (action === "approve") {
-            handleApprove(item);
-        } else {
-            handleDecline(item, reason);
+        approvalInFlight.current = true;
+        setApprovalLoading(true);
+        try {
+            if (action === "approve") {
+                await handleApprove(item);
+            } else {
+                await handleDecline(item, reason);
+            }
+            closeModal();
+        } catch (error) {
+            alert(`Failed to ${action === "approve" ? "approve" : "decline"}: ${error.message}`);
+        } finally {
+            approvalInFlight.current = false;
+            setApprovalLoading(false);
         }
-
-        closeModal();
     };
 
     // ---- Same colors as desktop table; compact size for mobile ----
@@ -326,6 +338,7 @@ function LeaveApprove() {
                 open={confirmModal.open}
                 onClose={closeModal}
                 onConfirm={processAction}
+                loading={approvalLoading}
                 tone={confirmModal.action === "approve" ? "approve" : "decline"}
                 requireReason={confirmModal.action === "decline"}
                 title={confirmModal.action === "approve"

@@ -14,6 +14,7 @@ const {
   sendFinalApprovalEmails,
   sendEmployeeDeclinedByHodEmail,
   sendActingOfficerCancelledEmail,
+  sendAdminNewLeaveEmail,   // ⭐ NEW — added for direct-to-admin case
 } = require('../utils/leaveEmails');
 
 async function sendEmailNotification(send, label) {
@@ -24,6 +25,12 @@ async function sendEmailNotification(send, label) {
     console.error(`[Email] ${label} notification failed (${error.code || 'UNKNOWN'}).`);
     return false;
   }
+}
+
+function sendEmailNotificationInBackground(send, label) {
+  setImmediate(() => {
+    void sendEmailNotification(send, label);
+  });
 }
 
 // ============================================
@@ -69,8 +76,12 @@ async function getHolidaysBetween(fromDate, toDate) {
   const endYear = new Date(toDate).getFullYear();
   const all = new Set();
 
-  for (let y = startYear; y <= endYear; y++) {
-    const yearHolidays = await fetchHolidaysForYear(y);
+  const yearHolidaysList = await Promise.all(
+    Array.from({ length: Math.max(0, endYear - startYear + 1) }, (_, index) =>
+      fetchHolidaysForYear(startYear + index)
+    )
+  );
+  for (const yearHolidays of yearHolidaysList) {
     for (const d of yearHolidays) {
       if (d >= fromDate && d <= toDate) all.add(d);
     }
@@ -95,7 +106,7 @@ async function computeWorkingDays(fromDate, toDate) {
 
   let days = 0;
   const cur = new Date(start);
-  while (cur < end) {
+  while (cur <= end) {
     const dow = cur.getDay();
     if (dow !== 0 && dow !== 6 && !holidaySet.has(toKey(cur))) days++;
     cur.setDate(cur.getDate() + 1);
@@ -148,54 +159,104 @@ router.get('/employees/acting-officers', verifyToken, async (req, res) => {
 // CREATE LEAVE
 // ============================================
 router.post('/leaves', verifyToken, async (req, res) => {
-  const { employee, division, type, fromDate, toDate, actingOfficer, reason, address } = req.body;
-  const appliedBy = req.user.name;
+  const { type, fromDate, toDate, actingOfficer, reason, address } = req.body;
+  const applicantRole = req.user.role;
+  const applicantId = req.user.id;
 
-  if (!employee || !division || !type || !fromDate || !toDate || !actingOfficer) {
+  if (!['employee', 'admin'].includes(applicantRole)) {
+    return res.status(403).json({ message: 'Only employees and admins can submit leave applications.' });
+  }
+  // ⭐ actingOfficer is now OPTIONAL for employees
+  if (!type || !fromDate || !toDate) {
     return res.status(400).json({ message: 'All required fields must be filled.' });
   }
 
-  let noOfDays;
-  if (type === 'Half-day') {
-    noOfDays = 0.5;
-  } else {
-    noOfDays = await computeWorkingDays(fromDate, toDate);
-  }
-
   try {
+    const profileTable = applicantRole === 'admin' ? 'admins' : 'employees';
+    const profileQuery = pool.query(
+      `SELECT name, division FROM ${profileTable} WHERE id = ? LIMIT 1`,
+      [applicantId]
+    );
+    const workingDaysQuery = type === 'Half-day'
+      ? Promise.resolve(0.5)
+      : computeWorkingDays(fromDate, toDate);
+    const [[profiles], noOfDays] = await Promise.all([profileQuery, workingDaysQuery]);
+    if (profiles.length === 0) {
+      return res.status(404).json({ message: 'Applicant profile not found.' });
+    }
+    const applicant = profiles[0];
+    const employee = applicant.name;
+    const division = applicant.division;
+    const appliedBy = applicant.name;
+
+    // ⭐ Decide acting officer + status
+    const hasActingOfficer =
+      applicantRole === 'employee' &&
+      Boolean(actingOfficer && String(actingOfficer).trim());
+    const assignedActingOfficer = hasActingOfficer ? actingOfficer : null;
+
+    const status = applicantRole === 'admin'
+      ? 'Admin Approved'
+      : (hasActingOfficer ? 'Pending Acting Officer' : 'Pending');
+
     const today = new Date().toISOString().split('T')[0];
 
     const [result] = await pool.query(
       `INSERT INTO leaves 
-       (employee, division, type, from_date, to_date, no_of_days, acting_officer, status, applied_by, applied_on, reason, address) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending Acting Officer', ?, ?, ?, ?)`,
-      [employee, division, type, fromDate, toDate, noOfDays, actingOfficer, appliedBy, today, reason, address]
+       (employee, division, type, from_date, to_date, no_of_days, acting_officer,
+        applicant_user_id, applicant_role, status, applied_by, applied_on, reason, address)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        employee, division, type, fromDate, toDate, noOfDays, assignedActingOfficer,
+        applicantId, applicantRole, status, appliedBy, today, reason, address,
+      ]
     );
 
-    console.log(`[API] New leave created: ${result.insertId} for ${employee} (${noOfDays} day(s))`);
+    console.log(`[API] New leave created: ${result.insertId} for ${employee} (${noOfDays} day(s)) — status: ${status}`);
 
-    const emailSent = await sendEmailNotification(
-      () => sendActingOfficerAssignedEmail({
-        employee,
-        division,
-        type,
-        from: fromDate,
-        to: toDate,
-        noOfDays,
-        reason,
-        address,
-      }, actingOfficer),
-      'Acting officer assignment'
+    const leaveEmailData = {
+      employee,
+      division,
+      type,
+      from: fromDate,
+      to: toDate,
+      noOfDays,
+      reason,
+      address,
+    };
+
+    // ⭐ Email routing — 3 cases
+    sendEmailNotificationInBackground(
+      () => {
+        if (applicantRole === 'admin') {
+          // Admin leave → HOD direct
+          return sendHodAwaitingFinalApprovalEmail(leaveEmailData);
+        }
+        if (hasActingOfficer) {
+          // Employee + acting officer → notify acting officer
+          return sendActingOfficerAssignedEmail(leaveEmailData, assignedActingOfficer);
+        }
+        // Employee + no acting officer → notify Admin directly
+        return sendAdminNewLeaveEmail(leaveEmailData);
+      },
+      applicantRole === 'admin'
+        ? 'HOD direct approval request'
+        : hasActingOfficer
+          ? 'Acting officer assignment'
+          : 'Admin new leave request'
     );
 
     return res.status(201).json({
-      message: emailSent
-        ? 'Leave application submitted successfully. Awaiting acting officer confirmation.'
-        : 'Leave application was submitted, but the acting officer notification email could not be sent.',
+      message: applicantRole === 'admin'
+        ? 'Leave application submitted successfully. Awaiting HOD approval.'
+        : hasActingOfficer
+          ? 'Leave application submitted successfully. Awaiting acting officer confirmation.'
+          : 'Leave application submitted successfully. Awaiting admin approval.',
       leaveId: result.insertId,
-      status: 'Pending Acting Officer',
+      status,
       noOfDays,
-      emailSent,
+      emailSent: null,
+      emailQueued: true,
     });
   } catch (error) {
     console.error('[Admin API Error] POST /leaves:', error);
@@ -227,7 +288,7 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
 
     const leaveData = leave[0];
 
-    if (leaveData.acting_officer !== actingOfficer) {
+    if (leaveData.applicant_role === 'admin' || leaveData.acting_officer !== actingOfficer) {
       return res.status(403).json({
         success: false,
         message: 'You are not the assigned acting officer for this leave.'
@@ -252,12 +313,15 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
            acting_officer_confirmed = ?, 
            declined_by = ?,
            decline_reason = ?
-       WHERE id = ?`,
+       WHERE id = ? AND status = 'Pending Acting Officer'`,
       [newStatus, confirmed, declinedBy, finalDeclineReason, leaveId]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Failed to update leave status.' });
+      return res.status(409).json({
+        success: false,
+        message: 'This leave request has already been processed.',
+      });
     }
 
     const [updatedLeave] = await pool.query('SELECT * FROM leaves WHERE id = ?', [leaveId]);
@@ -299,7 +363,7 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
 });
 
 // ============================================
-// EMPLOYEE CANCEL ROUTE (NEW ✅)
+// EMPLOYEE CANCEL ROUTE
 // ============================================
 /**
  * @route   PUT /api/admin/leaves/:id/cancel
@@ -309,7 +373,8 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
  */
 router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
   const leaveId = req.params.id;
-  const userName = req.user.name;
+  const userId = req.user.id;
+  const userRole = req.user.role;
   const { reason } = req.body;
 
   try {
@@ -324,7 +389,10 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
 
     const leave = rows[0];
 
-    if (leave.applied_by !== userName) {
+    if (
+      Number(leave.applicant_user_id) !== Number(userId) ||
+      leave.applicant_role !== userRole
+    ) {
       return res.status(403).json({
         success: false,
         message: 'You can only cancel your own leave requests.'
@@ -345,13 +413,13 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
        SET status = 'Cancelled',
            declined_by = 'Employee',
            decline_reason = ?
-       WHERE id = ? AND applied_by = ?`,
-      [cancelReason, leaveId, userName]
+       WHERE id = ? AND applicant_user_id = ? AND applicant_role = ?`,
+      [cancelReason, leaveId, userId, userRole]
     );
 
-    console.log(`[API] Leave ${leaveId} cancelled by employee ${userName}. Reason: ${cancelReason || '—'}`);
+    console.log(`[API] Leave ${leaveId} cancelled by user ${userId} (${userRole}). Reason: ${cancelReason || '—'}`);
 
-    // ✅ Email to Acting Officer — "no action needed"
+    // ✅ Email to Acting Officer — "no action needed" (only if acting officer exists)
     const emailLeave = {
       employee: leave.employee,
       division: leave.division,
@@ -390,12 +458,15 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
 // EMPLOYEE LIST
 // ============================================
 router.get('/leaves/employee', verifyToken, async (req, res) => {
-  const employeeName = req.user.name;
+  const applicantId = req.user.id;
+  const applicantRole = req.user.role;
 
   try {
     const [rows] = await pool.query(
       `SELECT 
         id, employee, division, type,
+        applicant_user_id as applicantUserId,
+        applicant_role as applicantRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -407,12 +478,13 @@ router.get('/leaves/employee', verifyToken, async (req, res) => {
         declined_by as declinedBy,
         decline_reason as declineReason,
         acting_officer_confirmed
-       FROM leaves WHERE applied_by = ?
+       FROM leaves
+       WHERE applicant_user_id = ? AND applicant_role = ?
        ORDER BY applied_on DESC, id DESC`,
-      [employeeName]
+      [applicantId, applicantRole]
     );
 
-    console.log(`[Employee API] Fetched ${rows.length} leaves for: ${employeeName}`);
+    console.log(`[Employee API] Fetched ${rows.length} leaves for user ${applicantId} (${applicantRole})`);
     return res.status(200).json(rows);
   } catch (error) {
     console.error('[Employee API Error] /leaves/employee:', error);
@@ -430,6 +502,8 @@ router.get('/leaves/acting-officer', verifyToken, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT 
         id, employee, division, type,
+        applicant_user_id as applicantUserId,
+        applicant_role as applicantRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -464,6 +538,8 @@ router.get('/hod/leaves', verifyToken, requireHOD, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT 
         id, employee, division, type,
+        applicant_user_id as applicantUserId,
+        applicant_role as applicantRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -501,7 +577,14 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
 
   try {
     const [check] = await pool.query(
-      'SELECT id, status FROM leaves WHERE id = ? AND division = ?',
+      `SELECT id, status, applicant_user_id as applicantUserId,
+              applicant_role as applicantRole, applied_by as appliedBy,
+              employee, division, type,
+              DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
+              DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
+              no_of_days as noOfDays, acting_officer as actingOfficer,
+              reason, address
+       FROM leaves WHERE id = ? AND division = ?`,
       [leaveId, division]
     );
 
@@ -513,9 +596,17 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
 
     const currentStatus = check[0].status;
     if (currentStatus !== 'Admin Approved') {
-      return res.status(400).json({
+      return res.status(409).json({
         message: `Cannot process leave with status "${currentStatus}". Only "Admin Approved" leaves can be finalized by HOD.`,
       });
+    }
+
+    if (
+      (check[0].applicantRole === req.user.role &&
+        Number(check[0].applicantUserId) === Number(req.user.id)) ||
+      (check[0].applicantUserId == null && check[0].appliedBy === req.user.name)
+    ) {
+      return res.status(403).json({ message: 'You cannot approve or reject your own leave request.' });
     }
 
     const newStatus = action === 'approve' ? 'Approved' : 'Declined';
@@ -527,49 +618,30 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
        SET status = ?, 
            declined_by = ?,
            decline_reason = ?
-       WHERE id = ? AND division = ?`,
+       WHERE id = ? AND division = ? AND status = 'Admin Approved'`,
       [newStatus, declinedBy, finalDeclineReason, leaveId, division]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
-        message: 'Leave record not found or does not belong to your division.',
+      return res.status(409).json({
+        message: 'This leave request has already been processed.',
       });
     }
 
-    const [emailLeaveRows] = await pool.query(
-      `SELECT employee, division, type,
-        DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
-        DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
-        no_of_days as noOfDays,
-        acting_officer as actingOfficer,
-        reason, address
-       FROM leaves WHERE id = ?`,
-      [leaveId]
+    const emailLeave = check[0];
+    sendEmailNotificationInBackground(
+      () => action === 'approve'
+        ? sendFinalApprovalEmails(emailLeave)
+        : sendEmployeeDeclinedByHodEmail(emailLeave, reason),
+      action === 'approve' ? 'Final approval' : 'HOD decline'
     );
-
-    let emailSent = null;
-    if (emailLeaveRows.length > 0) {
-      const emailLeave = emailLeaveRows[0];
-
-      if (action === 'approve') {
-        emailSent = await sendEmailNotification(
-          () => sendFinalApprovalEmails(emailLeave),
-          'Final approval'
-        );
-      } else {
-        emailSent = await sendEmailNotification(
-          () => sendEmployeeDeclinedByHodEmail(emailLeave, reason),
-          'HOD decline'
-        );
-      }
-    }
 
     return res.status(200).json({
       message: `Leave ${action === 'approve' ? 'approved' : 'declined'} by HOD successfully.`,
       id: leaveId,
       status: newStatus,
-      emailSent,
+      emailSent: null,
+      emailQueued: true,
     });
   } catch (error) {
     console.error('[HOD API Error] /leaves/:id/hod-approve:', error);
@@ -582,7 +654,7 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
 // ============================================
 router.put('/leaves/:id', verifyToken, async (req, res) => {
   const leaveId = req.params.id;
-  const userName = req.user.name;
+  const userId = req.user.id;
   const role = req.user.role;
 
   const { type, from, to, reason, address, actingOfficer } = req.body;
@@ -603,7 +675,10 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
 
     const leave = rows[0];
 
-    if (leave.applied_by !== userName) {
+    if (
+      Number(leave.applicant_user_id) !== Number(userId) ||
+      leave.applicant_role !== role
+    ) {
       return res.status(403).json({
         success: false,
         message: 'You can only edit your own leave requests.',
@@ -637,7 +712,7 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
            reason = COALESCE(?, reason),
            address = COALESCE(?, address),
            acting_officer = COALESCE(?, acting_officer)
-       WHERE id = ? AND applied_by = ?`,
+       WHERE id = ? AND applicant_user_id = ? AND applicant_role = ?`,
       [
         type || null,
         from || null,
@@ -647,13 +722,16 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
         address !== undefined ? address : null,
         actingOfficer || null,
         leaveId,
-        userName,
+        userId,
+        role,
       ]
     );
 
     const [updated] = await pool.query(
       `SELECT 
         id, employee, division, type,
+        applicant_user_id as applicantUserId,
+        applicant_role as applicantRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -719,6 +797,8 @@ router.get('/leaves', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT 
         id, employee, division, type,
+        applicant_user_id as applicantUserId,
+        applicant_role as applicantRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -751,13 +831,19 @@ router.put('/leaves/:id/status', async (req, res) => {
 
   try {
     const [check] = await pool.query(
-      'SELECT id, status FROM leaves WHERE id = ? AND division = ?',
+      'SELECT id, status, applicant_role as applicantRole FROM leaves WHERE id = ? AND division = ?',
       [leaveId, division]
     );
 
     if (check.length === 0) {
       return res.status(404).json({
         message: 'Leave record not found or does not belong to your division.',
+      });
+    }
+
+    if (check[0].applicantRole === 'admin') {
+      return res.status(403).json({
+        message: 'Admin leave requests can only be approved or rejected by the HOD of their division.',
       });
     }
 
@@ -783,7 +869,7 @@ router.put('/leaves/:id/status', async (req, res) => {
            recommended_by_admin = ?,
            declined_by = ?,
            decline_reason = ?
-       WHERE id = ? AND division = ?`,
+       WHERE id = ? AND division = ? AND status = 'Pending'`,
       [
         status,
         status === 'Admin Approved' ? 1 : 0,
@@ -795,8 +881,8 @@ router.put('/leaves/:id/status', async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
-        message: 'Leave record not found or does not belong to your assigned division.',
+      return res.status(409).json({
+        message: 'This leave request has already been processed.',
       });
     }
 
@@ -861,40 +947,74 @@ router.get('/employees', async (req, res) => {
   }
 });
 
+
 router.post('/employees', verifyToken, requireAdmin, async (req, res) => {
-  const division = req.user.division;
-  const { name, designation, email, appointment_date, password } = req.body;
+    const division = req.user.division;
+    const { name, designation, email, appointment_date, password } = req.body;
 
-  if (!name || !designation || !email) {
-    return res.status(400).json({ message: 'Name, designation, and email are required.' });
-  }
-
-  try {
-    const rawPassword = password && password.trim() ? password.trim() : 'Ministry@123';
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(rawPassword, salt);
-
-    const [result] = await pool.query(
-      `INSERT INTO employees (name, designation, division, email, password, appointment_date, status) 
-       VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
-      [name, designation, division, email, hashedPassword, appointment_date || new Date()]
-    );
-
-    return res.status(201).json({
-      message: 'Employee registered successfully in division.',
-      employee: {
-        id: result.insertId,
-        name, designation, division, email, appointment_date, status: 'Active',
-      },
-    });
-  } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ message: 'An employee with this email already exists.' });
+    // Required fields
+    if (!name?.trim() || !email?.trim() || !division) {
+        return res.status(400).json({
+            message: 'Name, division, and email are required.'
+        });
     }
-    console.error('[Admin API Error] POST /employees:', error);
-    return res.status(500).json({ message: 'Failed to create employee.' });
-  }
+
+    try {
+        const rawPassword =
+            password && password.trim()
+                ? password.trim()
+                : 'Ministry@123';
+
+        if (rawPassword.length < 6) {
+            return res.status(400).json({
+                message: 'Password must be at least 6 characters.'
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(rawPassword, salt);
+
+        const [result] = await pool.query(
+            `INSERT INTO employees
+            (name, designation, division, email, password, appointment_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
+            [
+                name.trim(),
+                designation?.trim() || null,
+                division,
+                email.trim(),
+                hashedPassword,
+                appointment_date || null
+            ]
+        );
+
+        return res.status(201).json({
+            message: 'Employee registered successfully in division.',
+            employee: {
+                id: result.insertId,
+                name: name.trim(),
+                designation: designation?.trim() || null,
+                division,
+                email: email.trim(),
+                appointment_date: appointment_date || null,
+                status: 'Active'
+            }
+        });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({
+                message: 'An employee with this email already exists.'
+            });
+        }
+
+        console.error('[Admin API Error] POST /employees:', error);
+
+        return res.status(500).json({
+            message: 'Failed to create employee.'
+        });
+    }
 });
+
 
 router.put('/employees/:id', async (req, res) => {
   const division = req.user.division;

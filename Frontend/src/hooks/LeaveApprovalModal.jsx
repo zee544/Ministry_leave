@@ -12,6 +12,15 @@ export default function LeaveApprovalModal({
   const { currentUser } = useUser();
   const { leaves } = useLeaves();
 
+  const hasActingOfficer = Boolean(
+    selectedLeave?.actingOfficer &&
+    String(selectedLeave.actingOfficer).trim() &&
+    selectedLeave.actingOfficer !== '—'
+  );
+
+  const isAdminLeave =
+    (selectedLeave?.applicantRole || selectedLeave?.applicant_role) === 'admin';
+
   const getLeaveDays = (leave) => {
     if (leave.noOfDays) return parseFloat(leave.noOfDays) || 0;
     if (leave.days) return parseFloat(leave.days) || 0;
@@ -186,12 +195,12 @@ export default function LeaveApprovalModal({
               margin-bottom: 1mm !important;
             }
 
-            .print-page:first-child .text-\[10px\] {
+            .print-page:first-child .text-\\[10px\\] {
               font-size: 5.5px !important; 
               line-height: 1.1 !important;
             }
 
-            .print-page:first-child .text-\[9px\] {
+            .print-page:first-child .text-\\[9px\\] {
               font-size: 5px !important; 
               line-height: 1.1 !important;
             }
@@ -221,7 +230,7 @@ export default function LeaveApprovalModal({
               line-height: 1.1 !important;
             }
 
-            .print-page:first-child span.text-\[\#0000FF\] {
+            .print-page:first-child span.text-\\[\\#0000FF\\] {
               font-size: 5.5px !important;
               line-height: 1.1 !important;
             }
@@ -234,7 +243,7 @@ export default function LeaveApprovalModal({
               font-size: 7px !important; 
             }
 
-            .print-page:first-child .text-\[9px\].text-\[\#0000FF\] {
+            .print-page:first-child .text-\\[9px\\].text-\\[\\#0000FF\\] {
               font-size: 7px !important;
             }
 
@@ -284,7 +293,7 @@ export default function LeaveApprovalModal({
               padding: 0.5px !important;
             }
 
-            .print-page:first-child [class*="text-\[\#0000FF\]"] {
+            .print-page:first-child [class*="text-\\[\\#0000FF\\]"] {
               font-size: 10px !important;
               line-height: 1.1 !important;
             }
@@ -598,7 +607,7 @@ export default function LeaveApprovalModal({
   const status = selectedLeave?.status || '';
   const declinedBy = selectedLeave?.declinedBy || '';
 
-  const isActingConfirmed =
+  const isActingConfirmed = hasActingOfficer && (
     selectedLeave?.actingOfficerConfirmed === true ||
     selectedLeave?.acting_officer_confirmed === true ||
     selectedLeave?.actingOfficerConfirmed === 1 ||
@@ -606,7 +615,8 @@ export default function LeaveApprovalModal({
     status === "Pending" ||
     status === "Admin Approved" ||
     status === "Approved" ||
-    (status === "Declined" && declinedBy === "Acting Officer");
+    (status === "Declined" && declinedBy === "Acting Officer")
+  );
 
   let adminDecision = "pending";
 
@@ -631,13 +641,21 @@ export default function LeaveApprovalModal({
     hodDecision = "not_allowed";
   }
 
-  const applicantSignature = getSignature(selectedLeave?.employee);
-  const actingOfficerSignature = getSignature(selectedLeave?.actingOfficer);
+  const effectiveAdminDecision = isAdminLeave ? "pending" : adminDecision;
+
+  const applicantSignature = isAdminLeave
+    ? getSignature("admin")
+    : getSignature(selectedLeave?.employee);
+
+  const actingOfficerSignature = hasActingOfficer
+    ? getSignature(selectedLeave?.actingOfficer)
+    : null;
 
   const adminSignature =
-    adminDecision !== "pending"
+    !isAdminLeave && adminDecision !== "pending"
       ? getSignature(selectedLeave?.adminName || "admin")
       : null;
+
   const hodSignature =
     hodDecision !== "pending"
       ? getSignature(selectedLeave?.hodName || "hod")
@@ -928,45 +946,84 @@ export default function LeaveApprovalModal({
             <div className="border-2 border-black p-2 flex flex-col flex-1">
               <div className="border border-black flex flex-col flex-1">
                 <div className="grid grid-cols-12 border-b border-black flex-1">
-                  <div className="col-span-4 border-r border-black p-0.5 flex flex-col justify-between print-acting-space">
-                    <div className="text-[10px] leading-tight">
-                      <p className="print-back-sinhala font-bold">
-                        ඉල්ලුම්කරු වෙනුවට වැඩ කිරීමට එකඟ වෙමි.
-                      </p>
-                      <p className="text-[9px] print-back-tamil">
-                        விண்ணப்பக்காரருக்காகப் பதிற் கடமையாற்றச் சம்மதிக்கின்றேன்.
-                      </p>
-                      <p className="font-bold italic">
-                        I agree to act for the applicant.
-                      </p>
-                    </div>
-                    <p className="font-semibold text-[#0000FF] text-s mt-0.5 print-acting-officer-value">
-                      {selectedLeave?.actingOfficer || '—'}
-                    </p>
-                  </div>
+                  {/* ⭐ Acting Officer section — HIDDEN for admin leaves */}
+                  {hasActingOfficer && !isAdminLeave ? (
+                    <>
+                      <div className="col-span-4 border-r border-black p-0.5 flex flex-col justify-between print-acting-space">
+                        <div className="text-[10px] leading-tight">
+                          <p className="print-back-sinhala font-bold">
+                            ඉල්ලුම්කරු වෙනුවට වැඩ කිරීමට එකඟ වෙමි.
+                          </p>
+                          <p className="text-[9px] print-back-tamil">
+                            விண்ணப்பக்காரருக்காகப் பதிற் கடமையாற்றச் சம்மதிக்கின்றேன்.
+                          </p>
+                          <p className="font-bold italic">
+                            I agree to act for the applicant.
+                          </p>
+                        </div>
+                        <p className="font-semibold text-[#0000FF] text-s mt-0.5 print-acting-officer-value">
+                          {selectedLeave?.actingOfficer}
+                        </p>
+                      </div>
 
-                  <div className="col-span-2 border-r border-black p-0.5 text-center flex flex-col justify-between print-signature-box">
-                    <div className="mt-0.5 print-signature-img">
-                      <SignatureImg 
-                        src={actingOfficerSignature} 
-                        name={selectedLeave?.actingOfficer}
-                        isSigned={isActingConfirmed}
-                        date={
-                          isActingConfirmed
-                            ? (selectedLeave?.appliedOn || "")
-                            : ""
-                        }
-                        className="w-full"
-                      />
-                    </div>
+                      <div className="col-span-2 border-r border-black p-0.5 text-center flex flex-col justify-between print-signature-box">
+                        <div className="mt-0.5 print-signature-img">
+                          <SignatureImg
+                            src={actingOfficerSignature}
+                            name={selectedLeave?.actingOfficer}
+                            isSigned={isActingConfirmed}
+                            date={
+                              isActingConfirmed
+                                ? (selectedLeave?.appliedOn || "")
+                                : ""
+                            }
+                            className="w-full"
+                          />
+                        </div>
 
-                    <div className="pt-0.5 text-[9px] font-bold print-sinhala-tamil-english leading-tight print-signature-label">
-                      <div className="border-black w-full mb-0.5"></div>
-                      <p>වැඩබලන නිලධාරී</p>
-                      <p>பதிற் கடமையாற்றி</p>
-                      <p>Acting Officer</p>
-                    </div>
-                  </div>
+                        <div className="pt-0.5 text-[9px] font-bold print-sinhala-tamil-english leading-tight print-signature-label">
+                          <div className="border-black w-full mb-0.5"></div>
+                          <p>වැඩබලන නිලධාරී</p>
+                          <p>பதிற் கடமையாற்றி</p>
+                          <p>Acting Officer</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* ⭐ EMPTY Acting Officer block — for admin leaves OR employee leaves with no acting officer */}
+                      <div className="col-span-4 border-r border-black p-0.5 flex flex-col justify-between print-acting-space">
+                        <div className="text-[10px] leading-tight">
+                          <p className="print-back-sinhala font-bold">
+                            ඉල්ලුම්කරු වෙනුවට වැඩ කිරීමට එකඟ වෙමි.
+                          </p>
+                          <p className="text-[9px] print-back-tamil">
+                            விண்ணப்பக்காரருக்காகப் பதிற் கடமையாற்றச் சம்மதிக்கின்றேன்.
+                          </p>
+                          <p className="font-bold italic">
+                            I agree to act for the applicant.
+                          </p>
+                        </div>
+                        <p className="font-semibold text-[#0000FF] text-s mt-0.5 print-acting-officer-value">
+                          &nbsp;
+                        </p>
+                      </div>
+
+                      <div className="col-span-2 border-r border-black p-0.5 text-center flex flex-col justify-between print-signature-box">
+                        <div className="mt-0.5 print-signature-img">
+                          <div className="border-b border-dashed border-gray-400 min-h-4 flex items-center justify-center text-[6px] text-gray-400 italic w-full">
+                          </div>
+                        </div>
+
+                        <div className="pt-0.5 text-[9px] font-bold print-sinhala-tamil-english leading-tight print-signature-label">
+                          <div className="border-black w-full mb-0.5"></div>
+                          <p>වැඩබලන නිලධාරී</p>
+                          <p>பதிற் கடமையாற்றி</p>
+                          <p>Acting Officer</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <div className="col-span-3 border-r border-black p-0.5 flex flex-col justify-between print-acting-space">
                     <div className="text-[10px] leading-tight print-admin-recommendation">
@@ -1024,31 +1081,31 @@ export default function LeaveApprovalModal({
                     <div className="p-0.5 flex flex-col justify-center flex-1">
                       <div className="text-[10px] leading-tight print-admin-recommendation">
                         <p className="font-bold">
-                          <span className={adminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             නිර්දේශ කරමි
                           </span>
                           {" / "}
-                          <span className={adminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             නොකරමි
                           </span>
                         </p>
 
                         <p className="mt-0.5">
-                          <span className={adminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             சிபாரிசு செய்யப்படுகிறது
                           </span>
                           {" / "}
-                          <span className={adminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             செய்யப்படவில்லை
                           </span>
                         </p>
 
                         <p className="font-bold mt-0.5">
-                          <span className={adminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "not_recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             Recommended
                           </span>
                           {" / "}
-                          <span className={adminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
+                          <span className={effectiveAdminDecision === "recommended" ? "line-through decoration-2 decoration-black text-gray-400" : ""}>
                             Not recommended.
                           </span>
                         </p>
@@ -1073,11 +1130,16 @@ export default function LeaveApprovalModal({
                   </div>
 
                   <div className="col-span-2 border-r border-black p-0.5 text-center flex flex-col justify-end">
+                    {/* ⭐ Supervising Officer signature — HIDDEN for admin leaves */}
                     <SignatureImg
                       src={adminSignature}
                       name="Supervising Officer"
-                      isSigned={adminDecision !== "pending"}
-                      date={adminDecision !== "pending" ? (selectedLeave?.appliedOn || "") : ""}
+                      isSigned={!isAdminLeave && adminDecision !== "pending"}
+                      date={
+                        !isAdminLeave && adminDecision !== "pending"
+                          ? (selectedLeave?.appliedOn || "")
+                          : ""
+                      }
                       className="w-full mb-0.5"
                     />
 

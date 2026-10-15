@@ -10,6 +10,8 @@ function Myleaves() {
     const { currentUser } = useUser();
     const { addNotification } = useNotifications();
 
+    const isAdmin = currentUser?.role === "admin";
+
     const [editing, setEditing] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [cancelTarget, setCancelTarget] = useState(null);
@@ -31,11 +33,10 @@ function Myleaves() {
         loadLeaves();
     }, []);
 
-    const normalize = (s) => (s || "").toString().trim().toLowerCase();
-
     const myLeaves = leaves.filter(
-        (l) =>
-            normalize(l.appliedBy) === normalize(currentUser.name)
+        (leave) =>
+            Number(leave.applicantUserId ?? leave.applicant_user_id) === Number(currentUser.id) &&
+            (leave.applicantRole ?? leave.applicant_role) === currentUser.role
     );
 
     const canModify = (status) => status === "Pending" || status === "Pending Acting Officer";
@@ -165,7 +166,6 @@ function Myleaves() {
         }
     };
 
-    // ---- Shared status renderer (compact for mobile, full for desktop) ----
     const renderStatus = (item, getStatusBadge, compact = false) => {
         const size = compact
             ? "px-2 py-0.5 text-[10px] rounded-md font-medium"
@@ -215,10 +215,8 @@ function Myleaves() {
                 </div>
             );
         }
-        // Desktop: use DataTable's original badge
         if (!compact && getStatusBadge) return getStatusBadge(item.status);
 
-        // Mobile fallback — same colors as desktop badges
         if (item.status === "Approved") {
             return (
                 <span className={`${size} bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300`}>
@@ -267,7 +265,18 @@ function Myleaves() {
             ),
         },
         { key: "appliedOn", label: "Applied On", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.appliedOn}</span> },
-        { key: "actingOfficer", label: "Acting Officer", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.actingOfficer}</span> },
+
+        // ⭐ Acting Officer column — SHOWN only for employees, HIDDEN for admin
+        ...(!isAdmin ? [{
+            key: "actingOfficer",
+            label: "Acting Officer",
+            render: (item) => (
+                <span className="text-gray-800 dark:text-gray-200">
+                    {item.actingOfficer || <span className="text-gray-400 dark:text-gray-500 italic">—</span>}
+                </span>
+            ),
+        }] : []),
+
         {
             key: "status",
             label: "Status",
@@ -289,7 +298,7 @@ function Myleaves() {
                     >
                         View
                     </button>
-                    {canModify(item.status) && (
+                    {!isAdmin && canModify(item.status) && (
                         <>
                             <button
                                 onClick={() => handleEdit(item)}
@@ -310,13 +319,8 @@ function Myleaves() {
         },
     ];
 
-    // ============================================================
-    // MOBILE CARD — compact: name+status on row 1, date+days row 2,
-    // buttons row 3. Status badge is small (text-[10px]).
-    // ============================================================
     const mobileRender = (leave, { getStatusBadge }) => (
         <div className="p-2.5">
-            {/* Row 1: Leave type (left) + compact status badge (right) */}
             <div className="flex justify-between items-start gap-2 mb-1.5">
                 <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
@@ -341,7 +345,6 @@ function Myleaves() {
                 </span>
             </div>
 
-            {/* Row 3: Buttons */}
             <div className="flex gap-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-700">
                 <button
                     onClick={() => {
@@ -352,7 +355,7 @@ function Myleaves() {
                 >
                     View
                 </button>
-                {canModify(leave.status) && (
+                {!isAdmin && canModify(leave.status) && (
                     <>
                         <button
                             onClick={() => handleEdit(leave)}

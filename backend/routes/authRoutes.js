@@ -691,9 +691,7 @@ router.put('/profile', verifyToken, async (req, res) => {
   }
 
   // Validate
-  if (!name || !name.trim()) {
-    return res.status(400).json({ message: 'Name is required.' });
-  }
+  
   if (!email || !email.trim()) {
     return res.status(400).json({ message: 'Email is required.' });
   }
@@ -703,6 +701,20 @@ router.put('/profile', verifyToken, async (req, res) => {
   }
 
   try {
+    let tableName;
+    if (role === 'admin') tableName = 'admins';
+    else if (role === 'hod') tableName = 'hod';
+    else tableName = 'employees';
+
+    const [currentProfileRows] = await pool.query(
+      `SELECT name, division FROM ${tableName} WHERE id = ? LIMIT 1`,
+      [userId]
+    );
+    if (currentProfileRows.length === 0) {
+      return res.status(404).json({ message: 'Profile not found.' });
+    }
+    const previousProfile = currentProfileRows[0];
+
     // Check if email belongs to someone else
     const [existing] = await pool.query(
       'SELECT id FROM employees WHERE LOWER(email) = LOWER(?) AND id != ? LIMIT 1',
@@ -712,25 +724,41 @@ router.put('/profile', verifyToken, async (req, res) => {
       return res.status(409).json({ message: 'This email is already in use by another employee.' });
     }
 
-       let tableName;
-    if (role === 'admin') tableName = 'admins';
-    else if (role === 'hod') tableName = 'hod';
-    else tableName = 'employees';
-
     if (role === 'employee') {
       await pool.query(
-        `UPDATE employees
-         SET name = ?, email = ?, designation = COALESCE(?, designation),
-             appointment_date = COALESCE(?, appointment_date)
-         WHERE id = ?`,
-        [
-          name.trim(),
-          email.trim().toLowerCase(),
-          designation ? designation.trim() : null,
-          appointment_date || null,
-          userId,
-        ]
+        `UPDATE leaves l
+         SET l.applicant_user_id = ?, l.applicant_role = ?
+         WHERE l.applicant_user_id IS NULL
+           AND l.applicant_role IS NULL
+           AND BINARY LOWER(TRIM(l.applied_by)) = BINARY LOWER(TRIM(?))
+           AND BINARY LOWER(TRIM(l.division)) = BINARY LOWER(TRIM(?))
+           AND (
+             (SELECT COUNT(*) FROM employees e
+              WHERE BINARY LOWER(TRIM(e.name)) = BINARY LOWER(TRIM(l.applied_by))
+                AND BINARY LOWER(TRIM(e.division)) = BINARY LOWER(TRIM(l.division)))
+             + (SELECT COUNT(*) FROM admins a
+                WHERE BINARY LOWER(TRIM(a.name)) = BINARY LOWER(TRIM(l.applied_by))
+                  AND BINARY LOWER(TRIM(a.division)) = BINARY LOWER(TRIM(l.division)))
+             + (SELECT COUNT(*) FROM hod h
+                WHERE BINARY LOWER(TRIM(h.name)) = BINARY LOWER(TRIM(l.applied_by))
+                  AND BINARY LOWER(TRIM(h.division)) = BINARY LOWER(TRIM(l.division)))
+           ) = 1`,
+        [userId, role, previousProfile.name, previousProfile.division]
       );
+
+      await pool.query(
+  `UPDATE employees
+   SET email = ?,
+       designation = COALESCE(?, designation),
+       appointment_date = COALESCE(?, appointment_date)
+   WHERE id = ?`,
+  [
+    email.trim().toLowerCase(),
+    designation ? designation.trim() : null,
+    appointment_date || null,
+    userId,
+  ]
+);
 
       const [rows] = await pool.query(
         `SELECT id, name, email, designation, division, status,
@@ -756,6 +784,27 @@ router.put('/profile', verifyToken, async (req, res) => {
     }
 
     // Admin / HOD
+    await pool.query(
+      `UPDATE leaves l
+       SET l.applicant_user_id = ?, l.applicant_role = ?
+       WHERE l.applicant_user_id IS NULL
+         AND l.applicant_role IS NULL
+         AND BINARY LOWER(TRIM(l.applied_by)) = BINARY LOWER(TRIM(?))
+         AND BINARY LOWER(TRIM(l.division)) = BINARY LOWER(TRIM(?))
+         AND (
+           (SELECT COUNT(*) FROM employees e
+            WHERE BINARY LOWER(TRIM(e.name)) = BINARY LOWER(TRIM(l.applied_by))
+              AND BINARY LOWER(TRIM(e.division)) = BINARY LOWER(TRIM(l.division)))
+           + (SELECT COUNT(*) FROM admins a
+              WHERE BINARY LOWER(TRIM(a.name)) = BINARY LOWER(TRIM(l.applied_by))
+                AND BINARY LOWER(TRIM(a.division)) = BINARY LOWER(TRIM(l.division)))
+           + (SELECT COUNT(*) FROM hod h
+              WHERE BINARY LOWER(TRIM(h.name)) = BINARY LOWER(TRIM(l.applied_by))
+                AND BINARY LOWER(TRIM(h.division)) = BINARY LOWER(TRIM(l.division)))
+         ) = 1`,
+      [userId, role, previousProfile.name, previousProfile.division]
+    );
+
     await pool.query(
       `UPDATE ${tableName}
        SET name = ?, email = ?, designation = COALESCE(?, designation)

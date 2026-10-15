@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import UserHeader from "../Components/userHeader";
 import UserSidebar from "../Components/usersidebar";
@@ -44,6 +44,7 @@ function UserDashboard() {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(false);
+  const actingActionInFlight = useRef(false);
 
   const [confirmModal, setConfirmModal] = useState({
     open: false,
@@ -76,7 +77,7 @@ function UserDashboard() {
   const closeModal = () =>
     setConfirmModal({ open: false, leave: null, action: "confirm" });
 
-  const handleApproveActing = async (leave, reason) => {
+  const handleApproveActing = async (leave) => {
     setLoading(true);
     setToast("Processing...");
 
@@ -108,7 +109,6 @@ function UserDashboard() {
       setToast(`Confirmed ${leave.employee}'s leave. Sent to admin.`);
       setTimeout(() => setToast(""), 4000);
 
-      if (fetchLeaves) await fetchLeaves();
     } catch (error) {
       console.error("Error confirming acting officer:", error);
       setToast(`❌ Failed to confirm ${leave.employee}'s leave: ${error.message}`);
@@ -154,7 +154,6 @@ function UserDashboard() {
       setToast(`❌ Declined ${leave.employee}'s leave.`);
       setTimeout(() => setToast(""), 4000);
 
-      if (fetchLeaves) await fetchLeaves();
     } catch (error) {
       console.error("Error declining acting officer:", error);
       setToast(`❌ Failed to decline ${leave.employee}'s leave: ${error.message}`);
@@ -166,20 +165,25 @@ function UserDashboard() {
 
   const processAction = async (reason) => {
     const { leave, action } = confirmModal;
-    if (!leave) return;
+    if (!leave || actingActionInFlight.current) return;
 
-    if (action === "confirm") {
-      await handleApproveActing(leave, reason);
-    } else {
-      await handleDeclineActing(leave, reason);
+    actingActionInFlight.current = true;
+    try {
+      if (action === "confirm") {
+        await handleApproveActing(leave);
+      } else {
+        await handleDeclineActing(leave, reason);
+      }
+      closeModal();
+    } finally {
+      actingActionInFlight.current = false;
     }
-
-    closeModal();
   };
 
-  const normalize = (s) => (s || "").toString().trim().toLowerCase();
   const myLeaves = leaves.filter(
-    (l) => normalize(l.appliedBy) === normalize(currentUser.name)
+    (leave) =>
+      Number(leave.applicantUserId ?? leave.applicant_user_id) === Number(currentUser.id) &&
+      (leave.applicantRole ?? leave.applicant_role) === currentUser.role
   );
   const pendingCount = myLeaves.filter((l) => l.status === "Pending").length;
   const approvedCount = myLeaves.filter((l) => l.status === "Approved").length;
@@ -499,12 +503,6 @@ function UserDashboard() {
     },
   ];
 
-  // ============================================================
-  // COMPACT MOBILE RENDER — Pending Acting Approvals
-  // Row 1: Name + Division·Type  |  Status badge
-  // Row 2: From → To             |  Days badge
-  // Row 3: Buttons (View / Confirm / Decline)
-  // ============================================================
   const actingDashboardMobileRender = (request, { getStatusBadge }) => (
     <div className="p-2.5">
       {/* Row 1 */}

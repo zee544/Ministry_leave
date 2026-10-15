@@ -4,6 +4,8 @@ import {
     LayoutDashboard,
     Users,
     ClipboardList,
+    CalendarPlus,
+    FileText,
     BarChart3,
     Settings,
     LogOut,
@@ -19,6 +21,12 @@ function Sidebar({ activeTab, onTabChange, isOpen, onClose }) {
         { key: "dashboard", label: "Dashboard",      icon: LayoutDashboard },
         { key: "employees", label: "Employees",      icon: Users           },
         { key: "leaves",    label: "Leave Requests", icon: ClipboardList   },
+        ...(currentUser.role === "admin"
+            ? [
+                { key: "apply-leave", label: "Apply for Leave", icon: CalendarPlus },
+                { key: "my-leaves", label: "My Leave Applications", icon: FileText },
+            ]
+            : []),
         { key: "reports",   label: "Reports",        icon: BarChart3       },
         { key: "settings",  label: "Settings",       icon: Settings        },
     ];

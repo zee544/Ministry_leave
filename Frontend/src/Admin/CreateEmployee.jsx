@@ -38,6 +38,7 @@ function CreateEmployee({ onCancel }) {
     const [errors, seterrors] = useState({});
     const [isSubmitting, setisSubmitting] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -45,51 +46,82 @@ function CreateEmployee({ onCancel }) {
         if (errors[name]) seterrors((prev) => ({ ...prev, [name]: '' }));
     };
 
-    const validateForm = () => {
-        let tempErrors = {};
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+const validateForm = () => {
+    let tempErrors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        if (!formdata.name) tempErrors.name = 'Name is required';
-        if (!formdata.designation) tempErrors.designation = 'Designation is required';
-        if (!formdata.division) tempErrors.division = 'Division is required';
-        if (!formdata.appointment_date) tempErrors.appointment_date = 'Appointment date is required';
 
-        if (!formdata.email) tempErrors.email = 'Email is required';
-        else if (!emailRegex.test(formdata.email)) tempErrors.email = 'Enter a valid email address';
+    if (!formdata.name.trim()) {
+        tempErrors.name = "Name is required";
+    }
 
-        if (!formdata.password || formdata.password.length < 6)
-            tempErrors.password = 'Password must be at least 6 characters';
+    if (!formdata.division) {
+        tempErrors.division = "Division is required";
+    }
 
-        seterrors(tempErrors);
-        return Object.keys(tempErrors).length === 0;
-    };
+    if (!formdata.email.trim()) {
+        tempErrors.email = "Email is required";
+    } else if (!emailRegex.test(formdata.email)) {
+        tempErrors.email = "Enter a valid email address";
+    }
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!validateForm()) return;
+    if (!formdata.password || formdata.password.length < 6) {
+        tempErrors.password = "Password must be at least 6 characters";
+    }
 
-        setisSubmitting(true);
-        try {
-            if (addEmployee) await addEmployee(formdata);
-            await new Promise((r) => setTimeout(r, 500));
+  
 
-            setShowSuccess(true);
+    seterrors(tempErrors);
+    return Object.keys(tempErrors).length === 0;
+};
 
-            setformdata({
-                name: '',
-                designation: '',
-                division: currentUser?.division || '',
-                email: '',
-                appointment_date: '',
-                password: 'Ministry@123',
-            });
-            seterrors({});
-        } catch (err) {
-            console.error('Registration failed:', err);
-        } finally {
-            setisSubmitting(false);
+    
+const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitError('');
+
+    if (!validateForm()) return;
+
+    setisSubmitting(true);
+
+    try {
+        if (!addEmployee) {
+            throw new Error('Employee creation function is unavailable.');
         }
-    };
+
+        await addEmployee({
+            ...formdata,
+            name: formdata.name.trim(),
+            email: formdata.email.trim(),
+            designation: formdata.designation.trim() || null,
+            appointment_date: formdata.appointment_date || null
+        });
+
+        setShowSuccess(true);
+
+        setformdata({
+            name: '',
+            designation: '',
+            division: currentUser?.division || '',
+            email: '',
+            appointment_date: '',
+            password: 'Ministry@123'
+        });
+
+        seterrors({});
+    } catch (err) {
+        console.error('Employee creation failed:', err);
+        setSubmitError(
+            err.response?.data?.message ||
+            err.message ||
+            'Failed to create employee. Please try again.'
+        );
+    } finally {
+        setisSubmitting(false);
+    }
+};
+
 
     const isFieldValid = (field) => {
         const value = formdata[field];
@@ -194,24 +226,20 @@ function CreateEmployee({ onCancel }) {
                         />
                     </Field>
 
-                    <Field
-                        label="Designation"
-                        htmlFor="designation"
-                        error={errors.designation}
-                        showCheck
-                        isValid={isFieldValid("designation")}
-                    >
-                        <input
-                            id="designation"
-                            name="designation"
-                            type="text"
-                            value={formdata.designation}
-                            onChange={handleChange}
-                            placeholder="e.g. Senior Officer"
-                            autoComplete="off"
-                            className={`${inputBase} ${inputState("designation")} ${isFieldValid("designation") ? "pr-10" : ""}`}
-                        />
-                    </Field>
+                    
+<Field label="Designation (Optional)" htmlFor="designation">
+    <input
+        id="designation"
+        name="designation"
+        type="text"
+        value={formdata.designation}
+        onChange={handleChange}
+        placeholder="e.g. Senior Officer"
+        autoComplete="off"
+        className={inputBase + " " + inputState("designation")}
+    />
+</Field>
+
 
                     <Field label="Division" htmlFor="division" error={errors.division}>
                         <select
@@ -228,20 +256,21 @@ function CreateEmployee({ onCancel }) {
                         </select>
                     </Field>
 
-                    <Field
-                        label="Date of First Appointment"
-                        htmlFor="appointment_date"
-                        error={errors.appointment_date}
-                    >
-                        <input
-                            id="appointment_date"
-                            name="appointment_date"
-                            type="date"
-                            value={formdata.appointment_date}
-                            onChange={handleChange}
-                            className={`${inputBase} ${inputState("appointment_date")} dark:[color-scheme:dark]`}
-                        />
-                    </Field>
+                  
+<Field
+    label="Date of First Appointment (Optional)"
+    htmlFor="appointment_date"
+>
+    <input
+        id="appointment_date"
+        name="appointment_date"
+        type="date"
+        value={formdata.appointment_date}
+        onChange={handleChange}
+        className={`${inputBase} ${inputState("appointment_date")} dark:[color-scheme:dark]`}
+    />
+</Field>
+
 
                     <Field
                         label="Email"

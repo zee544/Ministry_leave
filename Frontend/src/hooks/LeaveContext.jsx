@@ -10,6 +10,16 @@ const sortByAppliedDateDesc = (items) => {
   });
 };
 
+const normalizeLeave = (leave) => ({
+  ...leave,
+  applicantUserId: leave.applicantUserId ?? leave.applicant_user_id,
+  applicantRole: leave.applicantRole ?? leave.applicant_role,
+  actingOfficerConfirmed:
+    leave.acting_officer_confirmed ??
+    leave.actingOfficerConfirmed ??
+    false,
+});
+
 const INITIAL_LEAVES = [];
 
 export function LeaveProvider({ children }) {
@@ -70,14 +80,30 @@ export function LeaveProvider({ children }) {
 
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((leave) => ({
-            ...leave,
-            actingOfficerConfirmed:
-              leave.acting_officer_confirmed ??
-              leave.actingOfficerConfirmed ??
-              false,
-          }));
+        let personalAdminLeaves = [];
+        if (user.role === "admin") {
+          const personalResponse = await fetch(apiUrl("/api/admin/leaves/employee"), {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          if (!personalResponse.ok) {
+            throw new Error(`Failed to load personal leave applications (${personalResponse.status}).`);
+          }
+          personalAdminLeaves = await personalResponse.json();
+        }
+        const allLeaves = [
+          ...(Array.isArray(data) ? data : []),
+          ...(Array.isArray(personalAdminLeaves)
+            ? personalAdminLeaves.filter(
+              (personalLeave) =>
+                !Array.isArray(data) || !data.some((leave) => leave.id === personalLeave.id)
+            )
+            : []),
+        ];
+        if (allLeaves.length > 0) {
+          const mapped = allLeaves.map(normalizeLeave);
           setLeaves(sortByAppliedDateDesc(mapped));
         } else {
           setLeaves([]);
@@ -110,19 +136,14 @@ export function LeaveProvider({ children }) {
         const data = await res.json();
 
         if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((leave) => ({
-            ...leave,
-            actingOfficerConfirmed:
-              leave.acting_officer_confirmed ??
-              leave.actingOfficerConfirmed ??
-              false,
-          }));
-
+          const mapped = data.map(normalizeLeave);
           setLeaves((prev) => {
-            const existingIds = new Set(prev.map((l) => l.id));
-            const newLeaves = mapped.filter((l) => !existingIds.has(l.id));
-            if (newLeaves.length === 0) return prev;
-            const merged = [...newLeaves, ...prev];
+            const fetchedById = new Map(mapped.map((leave) => [String(leave.id), leave]));
+            const merged = prev.map((leave) =>
+              fetchedById.get(String(leave.id)) || leave
+            );
+            const existingIds = new Set(prev.map((leave) => String(leave.id)));
+            merged.push(...mapped.filter((leave) => !existingIds.has(String(leave.id))));
             return sortByAppliedDateDesc(merged);
           });
         }
@@ -181,6 +202,10 @@ export function LeaveProvider({ children }) {
     const token = localStorage.getItem("token");
     let savedLeave = null;
 
+    if (!token) {
+      throw new Error("Please sign in before submitting a leave application.");
+    }
+
     if (token) {
       try {
         const response = await fetch(apiUrl("/api/admin/leaves"), {
@@ -207,11 +232,18 @@ export function LeaveProvider({ children }) {
           savedLeave = {
             id: data.leaveId,
             ...leaveData,
+            applicantUserId: leaveData.applicantUserId,
+            applicantRole: leaveData.applicantRole,
+            status: data.status,
             appliedOn: new Date().toISOString().split("T")[0],
           };
+        } else {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || `Leave submission failed (${response.status}).`);
         }
       } catch (err) {
-        console.warn("Error saving leave to backend:", err.message);
+        console.error("Error saving leave to backend:", err.message);
+        throw err;
       }
     }
 
@@ -248,6 +280,16 @@ export function LeaveProvider({ children }) {
 
       const data = await response.json();
       await fetchLeaves();
+      if (data.leave) {
+        const updatedLeave = normalizeLeave(data.leave);
+        setLeaves((prev) => sortByAppliedDateDesc(
+          prev.map((leave) =>
+            String(leave.id) === String(updatedLeave.id)
+              ? { ...leave, ...updatedLeave }
+              : leave
+          )
+        ));
+      }
       return data;
     },
     [fetchLeaves]
@@ -256,6 +298,7 @@ export function LeaveProvider({ children }) {
   const updateLeaveStatus = useCallback(
     async (id, newStatus, extraProps = {}) => {
       const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
       if (token) {
         try {
           const payload = {
@@ -274,11 +317,27 @@ export function LeaveProvider({ children }) {
             body: JSON.stringify(payload),
           });
 
-          if (res.ok) {
-            await fetchLeaves();
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.message || `Failed to update leave status (${res.status}).`);
           }
+
+          setLeaves((prev) => sortByAppliedDateDesc(
+            prev.map((leave) => String(leave.id) === String(id)
+              ? {
+                ...leave,
+                status: data.status || newStatus,
+                recommendedByAdmin: payload.recommendedByAdmin,
+                declinedBy: payload.declinedBy,
+                declineReason: payload.reason,
+              }
+              : leave)
+          ));
+          await fetchLeaves();
+          return data;
         } catch (err) {
           console.warn("Error updating leave:", err.message);
+          throw err;
         }
       }
     },
@@ -308,6 +367,17 @@ export function LeaveProvider({ children }) {
       }
 
       const data = await res.json();
+      setLeaves((prev) => sortByAppliedDateDesc(
+        prev.map((leave) => String(leave.id) === String(id)
+          ? {
+            ...leave,
+            status: data.status || (action === "approve" ? "Approved" : "Declined"),
+            ...(action === "decline"
+              ? { declinedBy: "HOD", declineReason: extra.reason || null }
+              : { declinedBy: null, declineReason: null }),
+          }
+          : leave)
+      ));
       await fetchLeaves();
       return data;
     },
@@ -408,7 +478,11 @@ export function LeaveProvider({ children }) {
   );
 
   const getLeavesByEmployee = useCallback(
-    (employeeName) => leaves.filter((l) => l.appliedBy === employeeName),
+    (userId, role) => leaves.filter(
+      (leave) =>
+        Number(leave.applicantUserId ?? leave.applicant_user_id) === Number(userId) &&
+        (role ? (leave.applicantRole ?? leave.applicant_role) === role : true)
+    ),
     [leaves]
   );
 
