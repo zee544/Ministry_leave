@@ -236,7 +236,6 @@ function ActingApprovals() {
 
     const columns = [
         { key: "employee", label: "Employee", render: (item) => <span className="text-gray-800 dark:text-white">{item.employee}</span> },
-        { key: "division", label: "Division", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.division}</span> },
         { key: "type", label: "Type", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.type}</span> },
         { key: "from", label: "From", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.from}</span> },
         { key: "to", label: "To", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.to}</span> },
@@ -339,11 +338,6 @@ function ActingApprovals() {
         },
     ];
 
-    // ============================================================
-    // COMPACT MOBILE CARDS — 4 tight rows
-    // Row 1: Name + Days      Row 2: Division · Type
-    // Row 3: From → To        Row 4: Status (left) + buttons (right)
-    // ============================================================
 
     const PendingMobileCard = ({ item }) => (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-800 p-2 mb-1.5">

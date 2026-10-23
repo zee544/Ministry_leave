@@ -166,6 +166,164 @@ router.post('/hod-signup', async (req, res) => {
 });
 
 /**
+ * @route   POST /api/auth/executive-officer-signup
+ */
+router.post('/executive-officer-signup', async (req, res) => {
+  const { name, email, division, password } = req.body;
+
+  if (!name || !email || !division || !password) {
+    return res.status(400).json({ message: 'All fields (name, email, division, password) are required.' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email.trim())) return res.status(400).json({ message: 'Please provide a valid email address.' });
+
+  if (password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+  if (!/[A-Z]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one uppercase letter.' });
+  if (!/[a-z]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one lowercase letter.' });
+  if (!/[0-9]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one number.' });
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one special character.' });
+
+  try {
+    const [divRows] = await pool.query('SELECT id, name FROM divisions WHERE LOWER(name) = LOWER(?) LIMIT 1', [division.trim()]);
+    if (divRows.length === 0) return res.status(400).json({ message: 'Selected division is not a valid ministry division.' });
+
+    const exactDivisionName = divRows[0].name;
+
+    // Check email across all role tables
+    const [existingEmailAdmin] = await pool.query('SELECT id FROM admins WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailHOD] = await pool.query('SELECT id FROM hod WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+
+    if (
+      existingEmailAdmin.length > 0 ||
+      existingEmailHOD.length > 0 ||
+      existingEmailEmp.length > 0 ||
+      existingEmailEO.length > 0 ||
+      existingEmailSec.length > 0
+    ) {
+      return res.status(409).json({ message: 'An account with this email address is already registered.' });
+    }
+
+    // One Executive Officer per division (adjust if you need multiple)
+    const [existingEO] = await pool.query(
+      'SELECT id, name, email FROM executive_officers WHERE LOWER(division) = LOWER(?) LIMIT 1',
+      [exactDivisionName]
+    );
+    if (existingEO.length > 0) {
+      return res.status(400).json({
+        message: `An Executive Officer is already registered for "${exactDivisionName}" division (${existingEO[0].name}). Each division has only one Executive Officer.`,
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const [lastEO] = await pool.query('SELECT id FROM executive_officers ORDER BY id DESC LIMIT 1');
+    const nextId = lastEO.length > 0 ? lastEO[0].id + 1 : 1;
+    const empId = `EO-${String(nextId).padStart(4, '0')}`;
+
+    const [result] = await pool.query(
+      `INSERT INTO executive_officers (name, email, password, division, role, designation, employee_id)
+       VALUES (?, ?, ?, ?, 'executive_officer', 'Executive Officer', ?)`,
+      [name.trim(), email.trim().toLowerCase(), hashedPassword, exactDivisionName, empId]
+    );
+
+    return res.status(201).json({
+      message: `Executive Officer registered successfully for ${exactDivisionName}! You can now sign in.`,
+      executiveOfficer: {
+        id: result.insertId,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        division: exactDivisionName,
+        role: 'executive_officer',
+        designation: 'Executive Officer',
+        employeeId: empId,
+      },
+    });
+  } catch (error) {
+    console.error('[Auth Error] /executive-officer-signup:', error);
+    return res.status(500).json({ message: 'Executive Officer registration failed. Please try again.' });
+  }
+});
+
+/**
+ * @route   POST /api/auth/secretary-signup
+ */
+router.post('/secretary-signup', async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'All fields (name, email, password) are required.' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email.trim())) return res.status(400).json({ message: 'Please provide a valid email address.' });
+
+  if (password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+  if (!/[A-Z]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one uppercase letter.' });
+  if (!/[a-z]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one lowercase letter.' });
+  if (!/[0-9]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one number.' });
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return res.status(400).json({ message: 'Password must contain at least one special character.' });
+
+  try {
+    // Only ONE secretary allowed
+    const [existingSec] = await pool.query('SELECT id, name FROM secretary LIMIT 1');
+    if (existingSec.length > 0) {
+      return res.status(400).json({
+        message: `A Secretary is already registered (${existingSec[0].name}). Only one Secretary account is allowed.`,
+      });
+    }
+
+    // Email uniqueness check
+    const [existingEmailAdmin] = await pool.query('SELECT id FROM admins WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailHOD] = await pool.query('SELECT id FROM hod WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+
+    if (
+      existingEmailAdmin.length > 0 ||
+      existingEmailHOD.length > 0 ||
+      existingEmailEmp.length > 0 ||
+      existingEmailEO.length > 0 ||
+      existingEmailSec.length > 0
+    ) {
+      return res.status(409).json({ message: 'An account with this email address is already registered.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const [lastSec] = await pool.query('SELECT id FROM secretary ORDER BY id DESC LIMIT 1');
+    const nextId = lastSec.length > 0 ? lastSec[0].id + 1 : 1;
+    const empId = `SEC-${String(nextId).padStart(4, '0')}`;
+
+    const [result] = await pool.query(
+      `INSERT INTO secretary (name, email, password, role, designation, employee_id)
+       VALUES (?, ?, ?, 'secretary', 'Secretary', ?)`,
+      [name.trim(), email.trim().toLowerCase(), hashedPassword, empId]
+    );
+
+    return res.status(201).json({
+      message: 'Secretary registered successfully! You can now sign in.',
+      secretary: {
+        id: result.insertId,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        role: 'secretary',
+        designation: 'Secretary',
+        employeeId: empId,
+      },
+    });
+  } catch (error) {
+    console.error('[Auth Error] /secretary-signup:', error);
+    return res.status(500).json({ message: 'Secretary registration failed. Please try again.' });
+  }
+});
+/**
  * @route   POST /api/auth/login
  */
 router.post('/login', async (req, res) => {
@@ -219,6 +377,51 @@ router.post('/login', async (req, res) => {
         role: 'hod',
         designation: hod.designation || 'Head of Division',
         employeeId: hod.employee_id || `HOD-${String(hod.id).padStart(4, '0')}`,
+      };
+      const token = jwt.sign(payload, process.env.JWT_SECRET || 'leave_sys_123', { expiresIn: process.env.JWT_EXPIRE || '7d' });
+      return res.status(200).json({ message: 'Login successful', token, user: payload, mustChangePassword: false });
+    }
+
+        // ---- Secretary ----
+    const [secRows] = await pool.query(
+      'SELECT id, name, email, password, role, designation, employee_id FROM secretary WHERE LOWER(email) = ? LIMIT 1',
+      [cleanEmail]
+    );
+    if (secRows.length > 0) {
+      const sec = secRows[0];
+      const isMatch = await bcrypt.compare(password, sec.password);
+      if (!isMatch) return res.status(401).json({ message: 'Invalid email or password. Please try again.' });
+
+      const payload = {
+        id: sec.id,
+        name: sec.name,
+        email: sec.email,
+        role: 'secretary',
+        designation: sec.designation || 'Secretary',
+        employeeId: sec.employee_id || `SEC-${String(sec.id).padStart(4, '0')}`,
+      };
+      const token = jwt.sign(payload, process.env.JWT_SECRET || 'leave_sys_123', { expiresIn: process.env.JWT_EXPIRE || '7d' });
+      return res.status(200).json({ message: 'Login successful', token, user: payload, mustChangePassword: false });
+    }
+
+    // ---- Executive Officer ----
+    const [eoRows] = await pool.query(
+      'SELECT id, name, email, password, division, role, designation, employee_id FROM executive_officers WHERE LOWER(email) = ? LIMIT 1',
+      [cleanEmail]
+    );
+    if (eoRows.length > 0) {
+      const eo = eoRows[0];
+      const isMatch = await bcrypt.compare(password, eo.password);
+      if (!isMatch) return res.status(401).json({ message: 'Invalid email or password. Please try again.' });
+
+      const payload = {
+        id: eo.id,
+        name: eo.name,
+        email: eo.email,
+        division: eo.division,
+        role: 'executive_officer',
+        designation: eo.designation || 'Executive Officer',
+        employeeId: eo.employee_id || `EO-${String(eo.id).padStart(4, '0')}`,
       };
       const token = jwt.sign(payload, process.env.JWT_SECRET || 'leave_sys_123', { expiresIn: process.env.JWT_EXPIRE || '7d' });
       return res.status(200).json({ message: 'Login successful', token, user: payload, mustChangePassword: false });

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useUser } from "../hooks/UserContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { apiUrl } from "../api.js";
+
 function Profile() {
   const { currentUser, leaveEntitlements, login } = useUser();
   const { leaves } = useLeaves();
@@ -52,12 +53,20 @@ function Profile() {
     loadProfile();
   }, []);
 
-  const myLeaves = leaves.filter(
-    (l) =>
+  const currentYear = new Date().getFullYear();
+
+  const myLeaves = leaves.filter((l) => {
+    const isMyLeave =
       Number(l.applicantUserId ?? l.applicant_user_id) === Number(currentUser.id) &&
       (l.applicantRole ?? l.applicant_role) === currentUser.role &&
-      (l.status === "Approved" || l.status === "Admin Approved")
-  );
+      (l.status === "Approved" || l.status === "Admin Approved");
+
+    if (!isMyLeave || !l.from) return false;
+
+    // Only include leaves from the current year
+    const leaveYear = new Date(l.from).getFullYear();
+    return leaveYear === currentYear;
+  });
 
   const getLeaveDays = (leave) => {
     if (leave.noOfDays) return parseFloat(leave.noOfDays) || 0;
@@ -100,6 +109,7 @@ function Profile() {
     color: b.color,
   }));
 
+  // ⭐ 4. Add Half-day row with the "times" logic
   balanceRows.push({
     label: "Half-day Leave",
     remaining: null,
@@ -158,10 +168,10 @@ function Profile() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-  email: editForm.email.trim(),
-  designation: editForm.designation.trim(),
-  appointment_date: editForm.appointment_date || null,
-}),
+          email: editForm.email.trim(),
+          designation: editForm.designation.trim(),
+          appointment_date: editForm.appointment_date || null,
+        }),
       });
 
       const data = await res.json();
@@ -276,17 +286,17 @@ function Profile() {
             <div className="space-y-4">
               <div>
                 <div>
-  <label className="text-xs font-medium text-gray-600 dark:text-gray-300 block mb-1">
-    Name
-  </label>
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-300 block mb-1">
+                    Name
+                  </label>
 
-  <input
-    type="text"
-    value={editForm.name}
-    readOnly
-    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm cursor-not-allowed"
-  />
-</div>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm cursor-not-allowed"
+                  />
+                </div>
               </div>
 
               <div>
@@ -330,7 +340,7 @@ function Profile() {
 
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                 <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                  🔒 Division and Employee ID cannot be edited. Contact your administrator for changes.
+                  🔒 Name, Division and Employee ID cannot be edited. Contact your administrator for changes.
                 </p>
               </div>
             </div>
@@ -348,7 +358,7 @@ function Profile() {
 
         <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-6 border border-gray-100 dark:border-gray-700">
           <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase mb-4">
-            Leave Balance
+            Leave Balance ({currentYear})
           </h4>
           <div className="space-y-3">
             {balanceRows.map((b) => (

@@ -15,6 +15,11 @@ import { SignatureProvider } from './hooks/SignatureContext.jsx'
 import {ThemeProvider} from './hooks/ThemeContext.jsx'
 import HODSignup from './HODSignup.jsx'
 import ResetPassword from './ResetPassword.jsx'
+import ExecutiveOfficerSignup from './pages/ExecutiveOfficerSignup.jsx'
+import SecretarySignup from './pages/SecretarySignup.jsx'
+import SecretaryDashboard from './Secretary/SecretaryDashboard.jsx'
+import ExecutiveOfficerDashboard from './Executive/ExecutiveOfficerDashboard.jsx'
+
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -30,6 +35,27 @@ createRoot(document.getElementById('root')).render(
                 <Route path="/admin-signup" element={<AdminSignup />} />
                 <Route path="/hod-signup" element={<HODSignup />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
+                 <Route path="/executive-officer-signup" element={<ExecutiveOfficerSignup />} />
+                  <Route path="/secretary-signup" element={<SecretarySignup />} />
+
+                
+                <Route
+  path="/executive-officer-dashboard"
+  element={
+    <ProtectedRoute roles={["executive_officer"]}>
+      <ExecutiveOfficerDashboard />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/secretarydashboard"
+  element={
+    <ProtectedRoute roles={["secretary"]}>
+      <SecretaryDashboard />
+    </ProtectedRoute>
+  }
+/>
+                
                 <Route
                   path="/Admindashboard"
                   element={
@@ -55,6 +81,7 @@ createRoot(document.getElementById('root')).render(
                   }
                 />
               </Routes>
+              
             </LeaveProvider>
           </NotificationProvider>
         </SignatureProvider>

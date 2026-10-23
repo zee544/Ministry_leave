@@ -229,106 +229,125 @@ function AdminDashboard() {
     }
   };
 
+  // ⭐ FIXED: Removed Division column, adjusted sizes to prevent UI squeeze
   const dashboardColumns = [
     {
       key: "employee",
       label: "Employee",
+      className: "min-w-[140px]",
       render: (item) => (
-        <span className="font-medium text-gray-800 dark:text-white">{item.employee}</span>
+        <span className="font-medium text-gray-800 dark:text-white truncate block">
+          {item.employee}
+        </span>
       ),
     },
-    { key: "division", label: "Division", render: (item) => item.division },
-    { key: "type", label: "Type" },
-    { key: "from", label: "From" },
-    { key: "to", label: "To" },
+    { 
+      key: "type", 
+      label: "Type" 
+    },
+    { 
+      key: "from", 
+      label: "From",
+      render: (item) => <span className="whitespace-nowrap">{item.from}</span>
+    },
+    { 
+      key: "to", 
+      label: "To",
+      render: (item) => <span className="whitespace-nowrap">{item.to}</span>
+    },
     {
       key: "noOfDays",
       label: "Days",
+      className: "text-center",
       render: (item) => (
-        <span className="font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">
+        <span className="font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs whitespace-nowrap">
           {item.noOfDays || item.days || "—"}
         </span>
       ),
     },
-    { key: "actingOfficer", label: "Acting Officer" },
+    { 
+      key: "actingOfficer", 
+      label: "Acting Officer",
+      render: (item) => <span className="truncate block max-w-[120px]">{item.actingOfficer || "—"}</span>
+    },
     {
-  key: "status",
-  label: "Status",
-  className: "min-w-[200px]",
-  render: (item) => {
-    if (item.status === "Pending Acting Officer") {
-      return (
-        <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-          Awaiting Acting Officer
-        </span>
-      );
-    }
-    if (item.status === "Pending") {
-      return (
-        <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-          Awaiting Admin Approval
-        </span>
-      );
-    }
-    if (item.status === "Admin Approved") {
-      return (
-        <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
-          Awaiting HOD
-        </span>
-      );
-    }
-    if (item.status === "Approved") {
-      return (
-        <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-700">
-          ✓ Approved
-        </span>
-      );
-    }
-       if (item.status === "Declined") {
-      const by = item.declinedBy || item.declined_by || "—";
-      const reason = item.declineReason || item.decline_reason;
-      return (
-        <div className="flex flex-col gap-1 items-start max-w-[280px]">
-          <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-            ✗ Declined By {by}
+      key: "status",
+      label: "Status",
+      className: "min-w-[160px]", // Prevents badges from squishing
+      render: (item) => {
+        if (item.status === "Pending Acting Officer") {
+          return (
+            <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+              Awaiting Acting Officer
+            </span>
+          );
+        }
+        if (item.status === "Pending") {
+          return (
+            <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+              Awaiting Admin Approval
+            </span>
+          );
+        }
+        if (item.status === "Admin Approved") {
+          return (
+            <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+              Awaiting HOD
+            </span>
+          );
+        }
+        if (item.status === "Approved") {
+          return (
+            <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-700">
+              ✓ Approved
+            </span>
+          );
+        }
+        if (item.status === "Declined") {
+          const by = item.declinedBy || item.declined_by || "—";
+          const reason = item.declineReason || item.decline_reason;
+          return (
+            <div className="flex flex-col gap-1 items-start max-w-[280px]">
+              <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
+                ✗ Declined By {by}
+              </span>
+              {reason && (
+                <span
+                  className="text-sm text-rose-400 dark:text-rose-300 italic whitespace-normal break-words leading-snug"
+                  title={reason}
+                >
+                  <strong className="font-bold not-italic">Reason:</strong> "{reason}"
+                </span>
+              )}
+            </div>
+          );
+        }
+        if (item.status === "Cancelled") {
+          return (
+            <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+              Cancelled
+            </span>
+          );
+        }
+        return (
+          <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+            {item.status || "—"}
           </span>
-         {reason && (
-  <span
-    className="text-sm text-rose-400 dark:text-rose-300 italic whitespace-normal break-words leading-snug"
-    title={reason}
-  >
-    <strong className="font-bold not-italic">Reason:</strong> "{reason}"
-  </span>
-)}
-        </div>
-      );
-    }
-    if (item.status === "Cancelled") {
-      return (
-        <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
-          Cancelled
-        </span>
-      );
-    }
-    return (
-      <span className="whitespace-nowrap inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-        {item.status || "—"}
-      </span>
-    );
-  },
-},
+        );
+      },
+    },
     {
       key: "actions",
       label: "Action",
-      className: "text-right",
+      className: "text-right whitespace-nowrap min-w-[200px]", // Prevents buttons from stacking
       render: (item) => (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-1.5">
           <button
             onClick={() => {
               setSelectedLeave(item);
               setShowPrintModal(true);
             }}
-            className="flex items-center justify-center gap-1.5 px-3 py-1 bg-purple-500 text-white text-md rounded-lg hover:bg-purple-700 transition-colors shadow-sm font-medium"
+            className="flex items-center justify-center px-2.5 py-1.5 bg-purple-500 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors shadow-sm"
             title="View Application Form"
           >
             <span>View</span>
@@ -337,14 +356,14 @@ function AdminDashboard() {
             <>
               <button
                 onClick={() => askApprove(item)}
-                className="flex items-center justify-center gap-1.5 px-3 py-1 bg-green-500 text-white text-md rounded-lg hover:bg-green-700 transition-colors shadow-sm font-medium"
+                className="flex items-center justify-center px-2.5 py-1.5 bg-green-500 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors shadow-sm"
                 title="Pre-Approve and forward to HOD"
               >
                 <span>Approve</span>
               </button>
               <button
                 onClick={() => askDecline(item)}
-                className="flex items-center justify-center gap-1.5 px-3 py-1 bg-red-500 text-white text-md rounded-lg hover:bg-red-700 transition-colors shadow-sm font-medium"
+                className="flex items-center justify-center px-2.5 py-1.5 bg-red-500 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors shadow-sm"
                 title="Decline this leave request"
               >
                 <span>Decline</span>
@@ -356,12 +375,6 @@ function AdminDashboard() {
     },
   ];
 
-  // ============================================================
-  // COMPACT MOBILE CARD — 4 tight rows
-  // Row 1: Name + Division (left)  |  small status badge (right)
-  // Row 2: Type · From → To · Days (inline)
-  // Row 3: Buttons
-  // ============================================================
   const renderMobileStatus = (request) => {
     const size = "px-2 py-0.5 text-[10px] rounded-md font-semibold whitespace-nowrap inline-block";
 
@@ -426,16 +439,13 @@ function AdminDashboard() {
     );
   };
 
+  // ⭐ FIXED: Removed Division subtitle
   const mobileRender = (request) => (
-    <div className="p-2.5">
-      {/* Row 1: Name + Division  |  Status badge */}
-      <div className="flex justify-between items-start gap-2 mb-1.5">
+    <div className="p-3">
+      <div className="flex justify-between items-start gap-2 mb-2">
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-gray-800 dark:text-white truncate">
+          <p className="text-sm font-semibold text-gray-800 dark:text-white truncate">
             {request.employee}
-          </p>
-          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-            {request.division}
           </p>
         </div>
         <div className="shrink-0 text-right max-w-[55%]">
@@ -443,30 +453,28 @@ function AdminDashboard() {
         </div>
       </div>
 
-      {/* Row 2: Type · From → To · Days */}
-      <div className="flex justify-between items-center text-[11px] mb-2">
-        <span className="text-gray-700 dark:text-gray-300 truncate">
+      <div className="flex justify-between items-center text-xs mb-3">
+        <span className="text-gray-700 dark:text-gray-300 truncate mr-2">
           {request.type}
           <span className="text-gray-400 dark:text-gray-500 mx-1">·</span>
           {request.from}
           <span className="text-gray-400 dark:text-gray-500 mx-0.5">→</span>
           {request.to}
         </span>
-        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-1.5 py-0.5 rounded text-[10px]">
+        <span className="shrink-0 font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded text-[10px]">
           {request.noOfDays || request.days
             ? `${request.noOfDays || request.days}d`
             : ""}
         </span>
       </div>
 
-      {/* Row 3: Buttons */}
-      <div className="flex gap-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-700">
+      <div className="flex gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
         <button
           onClick={() => {
             setSelectedLeave(request);
             setShowPrintModal(true);
           }}
-          className="flex-1 px-2 py-1.5 bg-purple-500 text-white text-[11px] font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm"
+          className="flex-1 px-2 py-1.5 bg-purple-500 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors shadow-sm"
         >
           View Form
         </button>
@@ -474,13 +482,13 @@ function AdminDashboard() {
           <>
             <button
               onClick={() => askApprove(request)}
-              className="flex-1 px-2 py-1.5 bg-green-500 text-white text-[11px] font-medium rounded-md hover:bg-green-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-green-500 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors shadow-sm"
             >
               Approve
             </button>
             <button
               onClick={() => askDecline(request)}
-              className="flex-1 px-2 py-1.5 bg-red-500 text-white text-[11px] font-medium rounded-md hover:bg-red-700 transition-colors shadow-sm"
+              className="flex-1 px-2 py-1.5 bg-red-500 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors shadow-sm"
             >
               Decline
             </button>
@@ -687,6 +695,7 @@ function AdminDashboard() {
               {activeTab === "leaves" && <LeaveApprove />}
               {activeTab === "apply-leave" && <ApplyLeave />}
               {activeTab === "my-leaves" && <Myleaves />}
+              {activeTab === "secretaries" && <SecretaryAccounts />}
               {activeTab === "reports" && <Reports />}
               {activeTab === "settings" && <Settings />}
             </div>

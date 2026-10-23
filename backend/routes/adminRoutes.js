@@ -14,8 +14,9 @@ const {
   sendFinalApprovalEmails,
   sendEmployeeDeclinedByHodEmail,
   sendActingOfficerCancelledEmail,
-  sendAdminNewLeaveEmail,   // ⭐ NEW — added for direct-to-admin case
+  sendAdminNewLeaveEmail,
 } = require('../utils/leaveEmails');
+
 
 async function sendEmailNotification(send, label) {
   try {
@@ -111,7 +112,9 @@ async function computeWorkingDays(fromDate, toDate) {
     if (dow !== 0 && dow !== 6 && !holidaySet.has(toKey(cur))) days++;
     cur.setDate(cur.getDate() + 1);
   }
-  return days > 0 ? days : 0.5;
+
+  // ⭐ FIX #12: return the real count (0 if only weekends/holidays)
+  return days;
 }
 
 // ============================================
@@ -131,6 +134,17 @@ router.get('/holidays', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[Holiday API] /holidays route error:', error);
     return res.status(500).json({ message: 'Failed to fetch holidays.' });
+  }
+});
+
+// ⭐ FIX #9: move /divisions above the admin-only middleware so employees can use it
+router.get('/divisions', verifyToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, name, code FROM divisions ORDER BY name ASC');
+    return res.status(200).json(rows);
+  } catch (error) {
+    console.error('[Divisions API Error]:', error);
+    return res.status(500).json({ message: 'Failed to fetch divisions list.' });
   }
 });
 
@@ -159,20 +173,30 @@ router.get('/employees/acting-officers', verifyToken, async (req, res) => {
 // CREATE LEAVE
 // ============================================
 router.post('/leaves', verifyToken, async (req, res) => {
-  const { type, fromDate, toDate, actingOfficer, reason, address } = req.body;
+  let { type, fromDate, toDate, actingOfficer, reason, address } = req.body;
   const applicantRole = req.user.role;
   const applicantId = req.user.id;
 
-  if (!['employee', 'admin'].includes(applicantRole)) {
-    return res.status(403).json({ message: 'Only employees and admins can submit leave applications.' });
+  if (!['employee', 'admin', 'hod'].includes(applicantRole)) {
+    return res.status(403).json({ message: 'Only employees, admins, and HODs can submit leave applications.' });
   }
-  // ⭐ actingOfficer is now OPTIONAL for employees
   if (!type || !fromDate || !toDate) {
     return res.status(400).json({ message: 'All required fields must be filled.' });
   }
 
+  // ⭐ FIX: normalize half-day BEFORE validation — force same day
+  if (type === 'Half-day') {
+    if (!fromDate) {
+      return res.status(400).json({ message: 'Half-day leave requires a date.' });
+    }
+    toDate = fromDate; // silently correct if client sent a different date
+  }
+
   try {
-    const profileTable = applicantRole === 'admin' ? 'admins' : 'employees';
+    const profileTable =
+      applicantRole === 'admin' ? 'admins' :
+      applicantRole === 'hod' ? 'hods' : 'employees';
+
     const profileQuery = pool.query(
       `SELECT name, division FROM ${profileTable} WHERE id = ? LIMIT 1`,
       [applicantId]
@@ -184,33 +208,92 @@ router.post('/leaves', verifyToken, async (req, res) => {
     if (profiles.length === 0) {
       return res.status(404).json({ message: 'Applicant profile not found.' });
     }
+
+    if (type !== 'Half-day' && noOfDays === 0) {
+      return res.status(400).json({
+        message: 'The selected range contains no working days (weekends/holidays only).',
+      });
+    }
+
     const applicant = profiles[0];
     const employee = applicant.name;
     const division = applicant.division;
     const appliedBy = applicant.name;
 
-    // ⭐ Decide acting officer + status
     const hasActingOfficer =
       applicantRole === 'employee' &&
       Boolean(actingOfficer && String(actingOfficer).trim());
     const assignedActingOfficer = hasActingOfficer ? actingOfficer : null;
 
     const status = applicantRole === 'admin'
-      ? 'Admin Approved'
+      ? 'Pending'
       : (hasActingOfficer ? 'Pending Acting Officer' : 'Pending');
 
     const today = new Date().toISOString().split('T')[0];
 
-    const [result] = await pool.query(
-      `INSERT INTO leaves 
-       (employee, division, type, from_date, to_date, no_of_days, acting_officer,
-        applicant_user_id, applicant_role, status, applied_by, applied_on, reason, address)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        employee, division, type, fromDate, toDate, noOfDays, assignedActingOfficer,
-        applicantId, applicantRole, status, appliedBy, today, reason, address,
-      ]
-    );
+    let result;
+    let notification;
+    let connection;
+    let transactionStarted = false;
+    try {
+      connection = applicantRole === 'hod' ? await pool.getConnection() : pool;
+      if (applicantRole === 'hod') {
+        await connection.beginTransaction();
+        transactionStarted = true;
+      }
+
+      [result] = await connection.query(
+        `INSERT INTO leaves 
+         (employee, division, type, from_date, to_date, no_of_days, acting_officer,
+          applicant_user_id, applicant_role, status, applied_by, applied_on, reason, address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          employee, division, type, fromDate, toDate, noOfDays, assignedActingOfficer,
+          applicantId, applicantRole, status, appliedBy, today, reason, address,
+        ]
+      );
+
+      if (applicantRole === 'hod') {
+        const [secretaryRows] = await connection.query(
+          `SELECT name FROM secretaries WHERE division = ? AND status = 'Active' LIMIT 1`,
+          [division]
+        );
+        if (secretaryRows.length === 0) {
+          throw new Error('No active secretary assigned to this division.');
+        }
+        const assignedSecretary = secretaryRows[0];
+
+        const message = `${employee} submitted a ${type} leave request (${fromDate} to ${toDate}) for ${division}. Your approval is required.`;
+        const [notificationResult] = await connection.query(
+          `INSERT INTO notifications (message, type, recipient, division, link, read_status)
+           VALUES (?, 'leave_application', ?, ?, '/secretarydashboard', 0)`,
+          [message, assignedSecretary.name, division]
+        );
+        notification = {
+          id: notificationResult.insertId,
+          message,
+          type: 'leave_application',
+          recipient: assignedSecretary.name,
+          division,
+          link: '/secretarydashboard',
+          read: false,
+          timestamp: new Date().toISOString(),
+        };
+        await connection.commit();
+        transactionStarted = false;
+      }
+    } catch (error) {
+      if (transactionStarted) await connection.rollback();
+      throw error;
+    } finally {
+      if (applicantRole === 'hod' && connection) connection.release();
+    }
+
+    if (notification) {
+      try { broadcastNotification(notification); } catch (e) {
+        console.warn('[Notifications] broadcast failed:', e.message);
+      }
+    }
 
     console.log(`[API] New leave created: ${result.insertId} for ${employee} (${noOfDays} day(s)) — status: ${status}`);
 
@@ -225,33 +308,33 @@ router.post('/leaves', verifyToken, async (req, res) => {
       address,
     };
 
-    // ⭐ Email routing — 3 cases
-    sendEmailNotificationInBackground(
-      () => {
-        if (applicantRole === 'admin') {
-          // Admin leave → HOD direct
-          return sendHodAwaitingFinalApprovalEmail(leaveEmailData);
-        }
-        if (hasActingOfficer) {
-          // Employee + acting officer → notify acting officer
-          return sendActingOfficerAssignedEmail(leaveEmailData, assignedActingOfficer);
-        }
-        // Employee + no acting officer → notify Admin directly
-        return sendAdminNewLeaveEmail(leaveEmailData);
-      },
-      applicantRole === 'admin'
-        ? 'HOD direct approval request'
-        : hasActingOfficer
-          ? 'Acting officer assignment'
-          : 'Admin new leave request'
-    );
+    if (applicantRole !== 'hod') {
+      sendEmailNotificationInBackground(
+        () => {
+          if (applicantRole === 'admin') {
+            return sendHodAwaitingFinalApprovalEmail(leaveEmailData);
+          }
+          if (hasActingOfficer) {
+            return sendActingOfficerAssignedEmail(leaveEmailData, assignedActingOfficer);
+          }
+          return sendAdminNewLeaveEmail(leaveEmailData);
+        },
+        applicantRole === 'admin'
+          ? 'HOD direct approval request'
+          : hasActingOfficer
+            ? 'Acting officer assignment'
+            : 'Admin new leave request'
+      );
+    }
 
     return res.status(201).json({
-      message: applicantRole === 'admin'
+      message: applicantRole === 'hod'
+        ? 'Leave application submitted successfully. Awaiting Secretary approval.'
+        : applicantRole === 'admin'
         ? 'Leave application submitted successfully. Awaiting HOD approval.'
         : hasActingOfficer
           ? 'Leave application submitted successfully. Awaiting acting officer confirmation.'
-          : 'Leave application submitted successfully. Awaiting admin approval.',
+          : 'Leave application submitted successfully. Awaiting Admin or HOD approval.',
       leaveId: result.insertId,
       status,
       noOfDays,
@@ -259,8 +342,8 @@ router.post('/leaves', verifyToken, async (req, res) => {
       emailQueued: true,
     });
   } catch (error) {
-    console.error('[Admin API Error] POST /leaves:', error);
-    return res.status(500).json({ message: 'Failed to submit leave application.' });
+    console.error('[API Error] POST /leaves:', error);
+    return res.status(500).json({ message: error.message || 'Failed to submit leave application.' });
   }
 });
 
@@ -337,12 +420,22 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       reason: leaveData.reason,
     };
 
-    const emailSent = await sendEmailNotification(
-      () => action === 'confirm'
-        ? sendAdminAwaitingApprovalEmail(emailLeave, actingOfficer)
-        : sendEmployeeDeclinedByActingOfficerEmail(emailLeave, actingOfficer, reason),
-      action === 'confirm' ? 'Admin approval request' : 'Acting officer decline'
-    );
+    let emailSent = null;
+    if (action === 'confirm') {
+      emailSent = await sendEmailNotification(
+        () => sendAdminAwaitingApprovalEmail(emailLeave, actingOfficer),
+        'Admin approval request'
+      );
+      sendEmailNotificationInBackground(
+        () => sendHodAwaitingFinalApprovalEmail(emailLeave),
+        'HOD parallel approval request'
+      );
+    } else {
+      emailSent = await sendEmailNotification(
+        () => sendEmployeeDeclinedByActingOfficerEmail(emailLeave, actingOfficer, reason),
+        'Acting officer decline'
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -365,12 +458,6 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
 // ============================================
 // EMPLOYEE CANCEL ROUTE
 // ============================================
-/**
- * @route   PUT /api/admin/leaves/:id/cancel
- * @desc    Employee cancels their own leave request
- *          ✅ Sets status to "Cancelled" + saves reason
- *          ✅ Visible to Employee, Admin, Acting Officer, HOD
- */
 router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
   const leaveId = req.params.id;
   const userId = req.user.id;
@@ -381,10 +468,7 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM leaves WHERE id = ?', [leaveId]);
 
     if (rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave record not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Leave record not found.' });
     }
 
     const leave = rows[0];
@@ -419,7 +503,6 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
 
     console.log(`[API] Leave ${leaveId} cancelled by user ${userId} (${userRole}). Reason: ${cancelReason || '—'}`);
 
-    // ✅ Email to Acting Officer — "no action needed" (only if acting officer exists)
     const emailLeave = {
       employee: leave.employee,
       division: leave.division,
@@ -477,7 +560,9 @@ router.get('/leaves/employee', verifyToken, async (req, res) => {
         recommended_by_admin as recommendedByAdmin,
         declined_by as declinedBy,
         decline_reason as declineReason,
-        acting_officer_confirmed
+        acting_officer_confirmed,
+        approved_by as approvedBy,
+        approver_role as approverRole
        FROM leaves
        WHERE applicant_user_id = ? AND applicant_role = ?
        ORDER BY applied_on DESC, id DESC`,
@@ -514,7 +599,9 @@ router.get('/leaves/acting-officer', verifyToken, async (req, res) => {
         recommended_by_admin as recommendedByAdmin,
         declined_by as declinedBy,
         decline_reason as declineReason,
-        acting_officer_confirmed
+        acting_officer_confirmed,
+        approved_by as approvedBy,
+        approver_role as approverRole
        FROM leaves 
        WHERE LOWER(TRIM(acting_officer)) = LOWER(TRIM(?))
        ORDER BY applied_on DESC, id DESC`,
@@ -550,7 +637,9 @@ router.get('/hod/leaves', verifyToken, requireHOD, async (req, res) => {
         recommended_by_admin as recommendedByAdmin,
         declined_by as declinedBy,
         decline_reason as declineReason,
-        acting_officer_confirmed
+        acting_officer_confirmed,
+        approved_by as approvedBy,
+        approver_role as approverRole
        FROM leaves WHERE division = ?
        ORDER BY applied_on DESC, id DESC`,
       [division]
@@ -564,7 +653,7 @@ router.get('/hod/leaves', verifyToken, requireHOD, async (req, res) => {
 });
 
 // ============================================
-// HOD APPROVE / DECLINE
+// HOD APPROVE / DECLINE  (PARALLEL)
 // ============================================
 router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) => {
   const division = req.user.division;
@@ -595,9 +684,10 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
     }
 
     const currentStatus = check[0].status;
-    if (currentStatus !== 'Admin Approved') {
+
+    if (!['Pending', 'Admin Approved'].includes(currentStatus)) {
       return res.status(409).json({
-        message: `Cannot process leave with status "${currentStatus}". Only "Admin Approved" leaves can be finalized by HOD.`,
+        message: `Cannot process leave with status "${currentStatus}". Only "Pending" or "Admin Approved" leaves can be finalized by HOD.`,
       });
     }
 
@@ -612,14 +702,19 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
     const newStatus = action === 'approve' ? 'Approved' : 'Declined';
     const declinedBy = action === 'decline' ? 'HOD' : null;
     const finalDeclineReason = (action === 'decline' && reason) ? reason.trim() : null;
+    const approvedBy = action === 'approve' ? (req.user.name || 'HOD') : null;
+    const approverRole = action === 'approve' ? 'hod' : null;
 
     const [result] = await pool.query(
       `UPDATE leaves 
        SET status = ?, 
            declined_by = ?,
-           decline_reason = ?
-       WHERE id = ? AND division = ? AND status = 'Admin Approved'`,
-      [newStatus, declinedBy, finalDeclineReason, leaveId, division]
+           decline_reason = ?,
+           approved_by = ?,
+           approver_role = ?
+       WHERE id = ? AND division = ? AND status IN ('Pending', 'Admin Approved')
+         AND (applicant_role IS NULL OR applicant_role <> 'hod')`,
+      [newStatus, declinedBy, finalDeclineReason, approvedBy, approverRole, leaveId, division]
     );
 
     if (result.affectedRows === 0) {
@@ -640,6 +735,8 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
       message: `Leave ${action === 'approve' ? 'approved' : 'declined'} by HOD successfully.`,
       id: leaveId,
       status: newStatus,
+      approvedBy,
+      approverRole,
       emailSent: null,
       emailQueued: true,
     });
@@ -692,6 +789,14 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
       });
     }
 
+    // ⭐ FIX #11: block edits after acting officer has confirmed
+    if (leave.acting_officer_confirmed === 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot edit after the acting officer has confirmed.',
+      });
+    }
+
     const finalType = type || leave.type;
     const finalFrom = from || leave.from_date;
     const finalTo = to || leave.to_date;
@@ -701,6 +806,12 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
       computedDays = 0.5;
     } else if (finalFrom && finalTo) {
       computedDays = await computeWorkingDays(finalFrom, finalTo);
+      if (computedDays === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'The selected range contains no working days.',
+        });
+      }
     }
 
     await pool.query(
@@ -742,7 +853,9 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
         recommended_by_admin as recommendedByAdmin,
         declined_by as declinedBy,
         decline_reason as declineReason,
-        acting_officer_confirmed
+        acting_officer_confirmed,
+        approved_by as approvedBy,
+        approver_role as approverRole
        FROM leaves WHERE id = ?`,
       [leaveId]
     );
@@ -753,7 +866,7 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
       leave: updated[0],
     });
   } catch (error) {
-    console.error('[Admin API Error] PUT /leaves/:id:', error);
+    console.error('[API Error] PUT /leaves/:id:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update leave request.',
@@ -763,6 +876,8 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
 
 // ============================================
 // ADMIN-ONLY ROUTES
+// ⭐ FIX #1: verifyToken + requireAdmin applied ONCE here,
+//    not repeated on individual routes below.
 // ============================================
 router.use(verifyToken, requireAdmin);
 
@@ -770,17 +885,26 @@ router.get('/dashboard-stats', async (req, res) => {
   const division = req.user.division;
 
   try {
-    const [empCount] = await pool.query('SELECT COUNT(*) as count FROM employees WHERE division = ?', [division]);
-    const [pendingCount] = await pool.query('SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Pending"', [division]);
-    const [awaitingHodCount] = await pool.query('SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Admin Approved"', [division]);
-    const [approvedCount] = await pool.query('SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Approved"', [division]);
-    const [actingCount] = await pool.query('SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Pending Acting Officer"', [division]);
+    const [empCount] = await pool.query(
+      'SELECT COUNT(*) as count FROM employees WHERE division = ?', [division]);
+
+    // ⭐ FIX #6: separate counts
+    const [pendingCount] = await pool.query(
+      `SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = 'Pending'`,
+      [division]);
+    const [adminApprovedCount] = await pool.query(
+      `SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = 'Admin Approved'`,
+      [division]);
+    const [approvedCount] = await pool.query(
+      'SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Approved"', [division]);
+    const [actingCount] = await pool.query(
+      'SELECT COUNT(*) as count FROM leaves WHERE division = ? AND status = "Pending Acting Officer"', [division]);
 
     return res.status(200).json({
       division,
       totalEmployees: empCount[0].count,
       pendingLeaves: pendingCount[0].count,
-      awaitingHodLeaves: awaitingHodCount[0].count,
+      awaitingHodLeaves: adminApprovedCount[0].count,
       approvedLeaves: approvedCount[0].count,
       pendingActingOfficer: actingCount[0].count,
     });
@@ -809,7 +933,9 @@ router.get('/leaves', async (req, res) => {
         recommended_by_admin as recommendedByAdmin,
         declined_by as declinedBy,
         decline_reason as declineReason,
-        acting_officer_confirmed
+        acting_officer_confirmed,
+        approved_by as approvedBy,
+        approver_role as approverRole
        FROM leaves WHERE division = ?
        ORDER BY applied_on DESC, id DESC`,
       [division]
@@ -822,6 +948,7 @@ router.get('/leaves', async (req, res) => {
   }
 });
 
+// ⭐ Admin finalize — accepts "Approved" directly (parallel with HOD)
 router.put('/leaves/:id/status', async (req, res) => {
   const division = req.user.division;
   const leaveId = req.params.id;
@@ -848,35 +975,45 @@ router.put('/leaves/:id/status', async (req, res) => {
     }
 
     const currentStatus = check[0].status;
-    if (currentStatus !== 'Pending') {
+
+    if (!['Pending', 'Admin Approved'].includes(currentStatus)) {
       return res.status(400).json({
-        message: `Cannot update leave with status "${currentStatus}". Only "Pending" leaves can be pre-approved.`,
+        message: `Cannot update leave with status "${currentStatus}". Only "Pending" or "Admin Approved" leaves can be processed.`,
       });
     }
 
-    if (status !== 'Admin Approved' && status !== 'Declined') {
+    if (!['Approved', 'Admin Approved', 'Declined'].includes(status)) {
       return res.status(400).json({
-        message: 'Admin can only set status to "Admin Approved" or "Declined".',
+        message: 'Admin can only set status to "Approved", "Admin Approved", or "Declined".',
       });
     }
 
     const finalDeclineReason = (status === 'Declined' && reason) ? reason.trim() : null;
     const finalDeclinedBy = status === 'Declined' ? 'Admin' : null;
+    const isFinalApproval = status === 'Approved';
+    const approvedBy = isFinalApproval ? (req.user.name || 'Admin') : null;
+    const approverRole = isFinalApproval ? 'admin' : null;
+    // ⭐ FIX #8: only mark as "recommended" on legacy pre-approval path
+    const recommendedByAdmin = status === 'Admin Approved' ? 1 : 0;
 
     const [result] = await pool.query(
       `UPDATE leaves 
        SET status = ?, 
            recommended_by_admin = ?,
            declined_by = ?,
-           decline_reason = ?
-       WHERE id = ? AND division = ? AND status = 'Pending'`,
+           decline_reason = ?,
+           approved_by = ?,
+           approver_role = ?
+       WHERE id = ? AND division = ? AND status IN ('Pending', 'Admin Approved')`,
       [
         status,
-        status === 'Admin Approved' ? 1 : 0,
+        recommendedByAdmin,
         finalDeclinedBy,
         finalDeclineReason,
+        approvedBy,
+        approverRole,
         leaveId,
-        division
+        division,
       ]
     );
 
@@ -901,7 +1038,12 @@ router.put('/leaves/:id/status', async (req, res) => {
     if (emailLeaveRows.length > 0) {
       const emailLeave = emailLeaveRows[0];
 
-      if (status === 'Admin Approved') {
+      if (status === 'Approved') {
+        emailSent = await sendEmailNotification(
+          () => sendFinalApprovalEmails(emailLeave),
+          'Admin final approval'
+        );
+      } else if (status === 'Admin Approved') {
         emailSent = await sendEmailNotification(
           () => sendHodAwaitingFinalApprovalEmail(emailLeave),
           'HOD final approval request'
@@ -919,6 +1061,8 @@ router.put('/leaves/:id/status', async (req, res) => {
       message: `Leave status updated to "${status}" successfully.`,
       id: leaveId,
       status,
+      approvedBy,
+      approverRole,
       emailSent,
     });
   } catch (error) {
@@ -947,74 +1091,72 @@ router.get('/employees', async (req, res) => {
   }
 });
 
+// ⭐ FIX #1: no need for verifyToken, requireAdmin here — router.use handles it
+router.post('/employees', async (req, res) => {
+  const division = req.user.division;
+  const { name, designation, email, appointment_date, password } = req.body;
 
-router.post('/employees', verifyToken, requireAdmin, async (req, res) => {
-    const division = req.user.division;
-    const { name, designation, email, appointment_date, password } = req.body;
+  if (!name?.trim() || !email?.trim() || !division) {
+    return res.status(400).json({
+      message: 'Name, division, and email are required.'
+    });
+  }
 
-    // Required fields
-    if (!name?.trim() || !email?.trim() || !division) {
-        return res.status(400).json({
-            message: 'Name, division, and email are required.'
-        });
+  try {
+    const rawPassword =
+      password && password.trim()
+        ? password.trim()
+        : 'Ministry@123';
+
+    if (rawPassword.length < 6) {
+      return res.status(400).json({
+        message: 'Password must be at least 6 characters.'
+      });
     }
 
-    try {
-        const rawPassword =
-            password && password.trim()
-                ? password.trim()
-                : 'Ministry@123';
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(rawPassword, salt);
 
-        if (rawPassword.length < 6) {
-            return res.status(400).json({
-                message: 'Password must be at least 6 characters.'
-            });
-        }
+    const [result] = await pool.query(
+      `INSERT INTO employees
+      (name, designation, division, email, password, appointment_date, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
+      [
+        name.trim(),
+        designation?.trim() || null,
+        division,
+        email.trim(),
+        hashedPassword,
+        appointment_date || null
+      ]
+    );
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(rawPassword, salt);
-
-        const [result] = await pool.query(
-            `INSERT INTO employees
-            (name, designation, division, email, password, appointment_date, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
-            [
-                name.trim(),
-                designation?.trim() || null,
-                division,
-                email.trim(),
-                hashedPassword,
-                appointment_date || null
-            ]
-        );
-
-        return res.status(201).json({
-            message: 'Employee registered successfully in division.',
-            employee: {
-                id: result.insertId,
-                name: name.trim(),
-                designation: designation?.trim() || null,
-                division,
-                email: email.trim(),
-                appointment_date: appointment_date || null,
-                status: 'Active'
-            }
-        });
-    } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({
-                message: 'An employee with this email already exists.'
-            });
-        }
-
-        console.error('[Admin API Error] POST /employees:', error);
-
-        return res.status(500).json({
-            message: 'Failed to create employee.'
-        });
+    return res.status(201).json({
+      message: 'Employee registered successfully in division.',
+      employee: {
+        id: result.insertId,
+        name: name.trim(),
+        designation: designation?.trim() || null,
+        division,
+        email: email.trim(),
+        appointment_date: appointment_date || null,
+        status: 'Active'
+      }
+    });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        message: 'An employee with this email already exists.'
+      });
     }
+
+    console.error('[Admin API Error] POST /employees:', error);
+
+    return res.status(500).json({
+      message: 'Failed to create employee.'
+    });
+  }
 });
-
 
 router.put('/employees/:id', async (req, res) => {
   const division = req.user.division;
@@ -1071,14 +1213,6 @@ router.patch('/employees/:id/status', async (req, res) => {
   }
 });
 
-router.get('/divisions', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT id, name, code FROM divisions ORDER BY name ASC');
-    return res.status(200).json(rows);
-  } catch (error) {
-    console.error('[Admin API Error] /divisions:', error);
-    return res.status(500).json({ message: 'Failed to fetch divisions list.' });
-  }
-});
+// ⭐ /divisions route moved above (before router.use) so all authenticated users can access it
 
 module.exports = router;

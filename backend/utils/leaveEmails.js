@@ -15,9 +15,6 @@ function emailAction(path, label) {
   };
 }
 
-// ═══════════════════════════════════════════════
-// Helper: Look up an email address by name + division
-// ═══════════════════════════════════════════════
 async function findEmployeeEmail(name, division) {
   if (!name) return null;
 
@@ -49,6 +46,7 @@ async function findEmployeeEmail(name, division) {
 }
 
 async function findDivisionAdminEmail(division) {
+  if (!division) return null;
   const [rows] = await pool.query(
     `SELECT email FROM admins WHERE LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`,
     [division]
@@ -57,11 +55,66 @@ async function findDivisionAdminEmail(division) {
 }
 
 async function findDivisionHodEmail(division) {
+  if (!division) return null;
   const [rows] = await pool.query(
     `SELECT email FROM hod WHERE LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`,
     [division]
   );
   return rows[0]?.email || null;
+}
+
+/**
+ * Send the same "leave details" email to Admin AND HOD in parallel.
+ * Returns { adminSent, hodSent } — never throws unless both fail.
+ */
+async function sendToAdminAndHod({ leave, subject, text, mailHtml, accentAdmin, accentHod }) {
+  const adminEmail = await findDivisionAdminEmail(leave.division);
+  const hodEmail = await findDivisionHodEmail(leave.division);
+
+  if (!adminEmail && !hodEmail) {
+    throw new Error('Neither Admin nor HOD email could be resolved for division: ' + leave.division);
+  }
+
+  const results = { adminSent: false, hodSent: false };
+  const errors = [];
+
+  if (adminEmail) {
+    try {
+      await sendEmail({
+        to: adminEmail,
+        subject,
+        text,
+        html: wrapTemplate({ title: subject, accentColor: accentAdmin || '#2563eb', bodyHtml: mailHtml }),
+      });
+      results.adminSent = true;
+    } catch (err) {
+      errors.push({ target: 'admin', error: err });
+    }
+  }
+
+  if (hodEmail) {
+    try {
+      await sendEmail({
+        to: hodEmail,
+        subject,
+        text,
+        html: wrapTemplate({ title: subject, accentColor: accentHod || '#7c3aed', bodyHtml: mailHtml }),
+      });
+      results.hodSent = true;
+    } catch (err) {
+      errors.push({ target: 'hod', error: err });
+    }
+  }
+
+  // Only throw if BOTH failed (partial success is acceptable)
+  if (!results.adminSent && !results.hodSent && errors.length > 0) {
+    throw Object.assign(
+      new Error('Failed to send leave notification to both Admin and HOD.'),
+      { code: errors[0].error?.code }
+    );
+  }
+
+  return results;
 }
 
 // ═══════════════════════════════════════════════
@@ -105,84 +158,72 @@ async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
 }
 
 // ═══════════════════════════════════════════════
-// STAGE 1b — Employee submits leave WITHOUT acting officer → notify Admin directly
+// STAGE 1b — Employee submits leave WITHOUT acting officer → notify BOTH Admin & HOD (parallel)
 // ═══════════════════════════════════════════════
 async function sendAdminNewLeaveEmail(leave) {
   const { employee, division, type, from, to, noOfDays, reason, address } = leave;
 
-  const email = await findDivisionAdminEmail(division);
-  if (!email) {
-    throw new Error('Division admin email address was not found.');
-  }
+  const mailHtml = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
+      <p style="margin-bottom: 10px;">Hello,</p>
+      <p style="color: #475569; margin-bottom: 16px;">A new leave application has been submitted. You can approve or decline it directly — no acting officer was assigned.</p>
 
-  const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
+      <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${employee}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Division</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${division}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${type}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${from}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${to}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Days</strong></td><td style="padding:9px 12px; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${noOfDays}</td></tr>
+        ${reason ? `<tr><td style="padding:9px 12px; background:#f8fafc; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Reason</strong></td><td style="padding:9px 12px; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${reason}</td></tr>` : ''}
+        ${address ? `<tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #1e293b;">${address}</td></tr>` : ''}
+      </table>
 
-  await sendEmail({
-    to: email,
+      <p style="color: #475569; margin-top: 16px;">Please log in to the Ministry Leave System to review this request. <strong>Whichever of you (Admin or HOD) acts first will finalize the leave.</strong></p>
+      ${emailAction('/Admindashboard?tab=leaves', 'Review Leave Request').html}
+    </div>
+  `;
+
+  await sendToAdminAndHod({
+    leave,
     subject: `New Leave Application — ${employee} (${division})`,
-    text: `${employee} has submitted a ${type} leave from ${from} to ${to} directly to you (no acting officer was assigned). Sign in to review: ${action.url}`,
-    html: wrapTemplate({
-      title: 'New Leave Application — Direct to Admin',
-      accentColor: '#2563eb',
-      bodyHtml: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
-          <p style="margin-bottom: 10px;">Hello <strong style="color: #2563eb;">Administrator</strong>,</p>
-          <p style="color: #475569; margin-bottom: 16px;">A new leave application has been submitted <strong>directly to you</strong> (no acting officer was assigned).</p>
-
-          <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${employee}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Division</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${division}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${type}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${from}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${to}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Days</strong></td><td style="padding:9px 12px; ${reason ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${noOfDays}</td></tr>
-            ${reason ? `<tr><td style="padding:9px 12px; background:#f8fafc; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''}"><strong>Reason</strong></td><td style="padding:9px 12px; ${address ? 'border-bottom: 1px solid #e2e8f0;' : ''} color: #1e293b;">${reason}</td></tr>` : ''}
-            ${address ? `<tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #1e293b;">${address}</td></tr>` : ''}
-          </table>
-
-          <p style="color: #475569; margin-top: 16px;">Please log in to the Ministry Leave System to review and approve this request.</p>
-          ${action.html}
-        </div>
-      `,
-    }),
+    text: `${employee} has submitted a ${type} leave from ${from} to ${to}. Sign in to review.`,
+    mailHtml,
+    accentAdmin: '#2563eb',
+    accentHod: '#7c3aed',
   });
 }
 
 // ═══════════════════════════════════════════════
-// STAGE 2a — Acting Officer CONFIRMED → notify Admin
+// STAGE 2a — Acting Officer CONFIRMED → notify BOTH Admin & HOD (parallel)
 // ═══════════════════════════════════════════════
 async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
-  const email = await findDivisionAdminEmail(leave.division);
-  if (!email) {
-    throw new Error('Division admin email address was not found.');
-  }
-  const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
+  const mailHtml = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
+      <p style="margin-bottom: 10px;">Hello,</p>
+      <p style="color: #475569; margin-bottom: 16px;">The following leave request has been <strong>confirmed by the Acting Officer</strong> and is now awaiting your approval.</p>
+      
+      <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.employee}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.type}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.from}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.to}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Days</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.noOfDays}</td></tr>
+        <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${actingOfficerName}</td></tr>
+      </table>
+      
+      <p style="color: #475569; margin-top: 16px;">Please log in. <strong>Whichever of you (Admin or HOD) acts first will finalize the leave.</strong></p>
+      ${emailAction('/Admindashboard?tab=leaves', 'Review Leave Request').html}
+    </div>
+  `;
 
-  await sendEmail({
-    to: email,
-    subject: `Leave Awaiting Your Approval — ${leave.employee}`,
-    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting your approval. Sign in to review the request and choose an action: ${action.url}`,
-    html: wrapTemplate({
-      title: 'Leave Request Awaiting Approval',
-      accentColor: '#2563eb',
-      bodyHtml: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
-          <p style="margin-bottom: 10px;">Hello <strong style="color: #2563eb;">Administrator</strong>,</p>
-          <p style="color: #475569; margin-bottom: 16px;">The following leave request has been <strong>confirmed by the Acting Officer</strong> and is now awaiting your approval:</p>
-          
-          <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.employee}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.type}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.from}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.to}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Days</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.noOfDays}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${actingOfficerName}</td></tr>
-          </table>
-
-          ${action.html}
-        </div>
-      `,
-    }),
+  await sendToAdminAndHod({
+    leave,
+    subject: `Leave Awaiting Approval — ${leave.employee}`,
+    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting approval. Sign in to review.`,
+    mailHtml,
+    accentAdmin: '#2563eb',
+    accentHod: '#7c3aed',
   });
 }
 
@@ -214,44 +255,6 @@ async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName
           </table>
           
           <p style="color: #475569; margin-top: 16px;">You may submit a new leave application if needed.</p>
-          ${action.html}
-        </div>
-      `,
-    }),
-  });
-}
-
-// ═══════════════════════════════════════════════
-// STAGE 3a — Admin APPROVED → notify HOD
-// ═══════════════════════════════════════════════
-async function sendHodAwaitingFinalApprovalEmail(leave) {
-  const email = await findDivisionHodEmail(leave.division);
-  if (!email) {
-    throw new Error('Division HOD email address was not found.');
-  }
-  const action = emailAction('/hoddashboard?tab=leaves', 'Review Leave Request');
-
-  await sendEmail({
-    to: email,
-    subject: `Leave Awaiting Final Approval — ${leave.employee}`,
-    text: `${leave.employee}'s ${leave.type} leave has been pre-approved by Admin and is awaiting your final approval. Sign in to review the request and choose an action: ${action.url}`,
-    html: wrapTemplate({
-      title: 'Leave Awaiting Your Final Approval',
-      accentColor: '#7c3aed',
-      bodyHtml: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
-          <p style="margin-bottom: 10px;">Hello <strong style="color: #7c3aed;">Head of Division</strong>,</p>
-          <p style="color: #475569; margin-bottom: 16px;">The following leave request has been <strong>pre-approved by the Admin</strong> and is now awaiting your <strong>final approval</strong>:</p>
-          
-          <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.employee}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.type}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.from}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.to}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;"><strong>Days</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.noOfDays}</td></tr>
-            <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${leave.actingOfficer || '—'}</td></tr>
-          </table>
-
           ${action.html}
         </div>
       `,
@@ -293,7 +296,7 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
 }
 
 // ═══════════════════════════════════════════════
-// STAGE 4a — HOD APPROVED → notify Employee + Acting Officer
+// STAGE 4a — FINAL APPROVAL (Admin or HOD) → notify Employee + Acting Officer
 // ═══════════════════════════════════════════════
 async function sendFinalApprovalEmails(leave) {
   const employeeEmail = await findEmployeeEmail(leave.employee, leave.division);
@@ -312,7 +315,7 @@ async function sendFinalApprovalEmails(leave) {
         bodyHtml: `
           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
             <p style="margin-bottom: 10px;">Hello <strong>${leave.employee}</strong>,</p>
-            <p style="color: #475569; margin-bottom: 16px;">Your leave request has been <strong style="color:#059669;">FULLY APPROVED</strong> by the Head of Division. Enjoy your leave!</p>
+            <p style="color: #475569; margin-bottom: 16px;">Your leave request has been <strong style="color:#059669;">FULLY APPROVED</strong>. Enjoy your leave!</p>
             
             <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
               <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${leave.type}</td></tr>
@@ -334,50 +337,50 @@ async function sendFinalApprovalEmails(leave) {
 
   if (leave.actingOfficer) {
     const aoEmail = await findEmployeeEmail(leave.actingOfficer, leave.division);
-    if (!aoEmail) throw new Error('Acting officer email address was not found.');
-    const actingOfficerAction = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
-
-    try {
-      await sendEmail({
-        to: aoEmail,
-        subject: `You Are Officially Acting — ${leave.employee}'s Leave is Approved`,
-        text: `You are now officially acting for ${leave.employee} from ${leave.from} to ${leave.to}. View your acting assignments: ${actingOfficerAction.url}`,
-        html: wrapTemplate({
-          title: 'Your Acting Assignment is Now Active',
-          accentColor: '#0284c7',
-          bodyHtml: `
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
-              <p style="margin-bottom: 10px;">Hello <strong style="color: #0284c7;">${leave.actingOfficer}</strong>,</p>
-              <p style="color: #475569; margin-bottom: 16px;">You are now <strong>officially acting</strong> for the following leave, which has been fully approved:</p>
-              
-              <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; font-size: 13px;">
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd; width: 35%;"><strong>Employee on Leave</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.employee}</td></tr>
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Division</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.division}</td></tr>
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.type}</td></tr>
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.from}</td></tr>
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.to}</td></tr>
-                <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Total Days</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.noOfDays}</td></tr>
-                ${leave.reason ? `<tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Reason</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.reason}</td></tr>` : ''}
-                ${leave.address ? `<tr><td style="padding:9px 12px; background:#f0f9ff;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #0369a1;">${leave.address}</td></tr>` : ''}
-              </table>
-              
-              <div style="background: #f0f9ff; padding: 12px 14px; border-radius: 6px; border: 1px solid #bae6fd; margin-top: 16px;">
-                <p style="font-weight: 600; color: #0369a1; margin-top: 0; margin-bottom: 6px;">Your responsibilities:</p>
-                <ul style="margin: 0; padding-left: 18px; color: #334155;">
-                  <li style="margin-bottom: 3px;">Handle the employee's duties during this period</li>
-                  <li style="margin-bottom: 3px;">Ensure critical tasks are not delayed</li>
-                  <li>Report any issues to the Division Head / Admin</li>
-                </ul>
+    if (aoEmail) {
+      const actingOfficerAction = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
+      try {
+        await sendEmail({
+          to: aoEmail,
+          subject: `You Are Officially Acting — ${leave.employee}'s Leave is Approved`,
+          text: `You are now officially acting for ${leave.employee} from ${leave.from} to ${leave.to}. View your acting assignments: ${actingOfficerAction.url}`,
+          html: wrapTemplate({
+            title: 'Your Acting Assignment is Now Active',
+            accentColor: '#0284c7',
+            bodyHtml: `
+              <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
+                <p style="margin-bottom: 10px;">Hello <strong style="color: #0284c7;">${leave.actingOfficer}</strong>,</p>
+                <p style="color: #475569; margin-bottom: 16px;">You are now <strong>officially acting</strong> for the following leave, which has been fully approved:</p>
+                
+                <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; font-size: 13px;">
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd; width: 35%;"><strong>Employee on Leave</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.employee}</td></tr>
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Division</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.division}</td></tr>
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Leave Type</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.type}</td></tr>
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>From</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.from}</td></tr>
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>To</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.to}</td></tr>
+                  <tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Total Days</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.noOfDays}</td></tr>
+                  ${leave.reason ? `<tr><td style="padding:9px 12px; background:#f0f9ff; border-bottom: 1px solid #bae6fd;"><strong>Reason</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #bae6fd; color: #0369a1;">${leave.reason}</td></tr>` : ''}
+                  ${leave.address ? `<tr><td style="padding:9px 12px; background:#f0f9ff;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #0369a1;">${leave.address}</td></tr>` : ''}
+                </table>
+                
+                <div style="background: #f0f9ff; padding: 12px 14px; border-radius: 6px; border: 1px solid #bae6fd; margin-top: 16px;">
+                  <p style="font-weight: 600; color: #0369a1; margin-top: 0; margin-bottom: 6px;">Your responsibilities:</p>
+                  <ul style="margin: 0; padding-left: 18px; color: #334155;">
+                    <li style="margin-bottom: 3px;">Handle the employee's duties during this period</li>
+                    <li style="margin-bottom: 3px;">Ensure critical tasks are not delayed</li>
+                    <li>Report any issues to the Division Head / Admin</li>
+                  </ul>
+                </div>
+                
+                <p style="font-size: 13px; color: #64748b; margin-top: 16px;">If you have any concerns, contact your Division Head immediately.</p>
+                ${actingOfficerAction.html}
               </div>
-              
-              <p style="font-size: 13px; color: #64748b; margin-top: 16px;">If you have any concerns, contact your Division Head immediately.</p>
-              ${actingOfficerAction.html}
-            </div>
-          `,
-        }),
-      });
-    } catch (error) {
-      deliveryErrors.push(error);
+            `,
+          }),
+        });
+      } catch (error) {
+        deliveryErrors.push(error);
+      }
     }
   }
 
@@ -475,7 +478,6 @@ module.exports = {
   sendActingOfficerAssignedEmail,
   sendAdminAwaitingApprovalEmail,
   sendEmployeeDeclinedByActingOfficerEmail,
-  sendHodAwaitingFinalApprovalEmail,
   sendEmployeeDeclinedByAdminEmail,
   sendFinalApprovalEmails,
   sendEmployeeDeclinedByHodEmail,

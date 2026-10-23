@@ -73,6 +73,8 @@ function App() {
       if (user.role === "admin") navigate("/Admindashboard", { replace: true });
       else if (user.role === "hod") navigate("/hoddashboard", { replace: true });
       else if (user.role === "employee") navigate("/userdashboard", { replace: true });
+      else if (user.role === "secretary") navigate("/secretarydashboard", { replace: true });
+      else if (user.role === "executive_officer") navigate("/executive-officer-dashboard", { replace: true });
     }
   }, [currentUser, isAuthenticated, navigate]);
 
@@ -357,6 +359,22 @@ function App() {
                 HOD Sign Up
               </Link>
               
+              <p className="text-xs text-white/60 mt-3">Executive Officer?</p>
+<Link
+  to="/executive-officer-signup"
+  className="inline-block w-full rounded-lg border border-white/50 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 shadow-sm"
+>
+  Executive Officer Sign Up
+</Link>
+
+<p className="text-xs text-white/60 mt-3">Secretary?</p>
+<Link
+  to="/secretary-signup"
+  className="inline-block w-full rounded-lg border border-white/50 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 shadow-sm"
+>
+  Secretary Sign Up
+</Link>
+
               <p className="text-[10px] text-white/60 mt-2">
                 Employee accounts are provisioned exclusively by their division administrator.
               </p>
