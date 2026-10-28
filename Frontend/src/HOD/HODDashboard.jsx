@@ -19,6 +19,8 @@ import Reports from "../Admin/reports.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import HODSettings from "./HODSettings.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
+import ApplyLeave from "../User/ApplyLeave.jsx";
+import Myleaves from "../User/myleaves.jsx";
 
 
 function HODDashboard() {
@@ -71,7 +73,20 @@ function HODDashboard() {
   }, [notifications.length, fetchLeaves]);
 
   const userDivision = currentUser?.division || "Administration";
+  const myId = Number(currentUser?.id || 0);
+  const myEmail = (currentUser?.email || "").toLowerCase();
+
   const divisionLeaves = leaves.filter((l) => {
+    const role = l.applicantRole ?? l.applicant_role;
+    if (role === "executive_officer") return false;
+
+    // Check if explicitly targeted to this HOD (e.g. Anandani -> Priyanka)
+    const targetId = Number(l.targetApproverId ?? l.target_approver_id);
+    const targetEmail = (l.targetApproverEmail ?? l.target_approver_email ?? "").toLowerCase();
+    const isTargetedToMe = (targetId && targetId === myId) || (targetEmail && targetEmail === myEmail);
+    if (isTargetedToMe) return true;
+
+    // Match division for general employee leaves
     const leaveDiv = (l.division || "").toLowerCase();
     const userDiv = userDivision.toLowerCase();
     return (
@@ -80,10 +95,28 @@ function HODDashboard() {
     );
   });
 
-  const pendingHODApproval = divisionLeaves.filter(
-    (l) => (l.status === "Pending" || l.status === "Admin Approved") &&
-      (l.applicantRole ?? l.applicant_role) !== "hod"
-  );
+  const pendingHODApproval = divisionLeaves.filter((l) => {
+    if (l.status !== "Pending" && l.status !== "Admin Approved") return false;
+
+    const applicantId = Number(l.applicantUserId ?? l.applicant_user_id);
+    const role = l.applicantRole ?? l.applicant_role;
+
+    // An HOD cannot approve their own leave
+    if (applicantId === myId && role === "hod") return false;
+
+    // If targeted to a specific HOD, only that specific HOD sees it as pending
+    const targetId = Number(l.targetApproverId ?? l.target_approver_id);
+    const targetEmail = (l.targetApproverEmail ?? l.target_approver_email ?? "").toLowerCase();
+    if (targetId && targetId !== myId) return false;
+    if (targetEmail && targetEmail !== myEmail) return false;
+
+    // If an HOD applied, only show if targeted to this HOD
+    if (role === "hod") {
+      return (targetId === myId) || (targetEmail === myEmail);
+    }
+
+    return true;
+  });
 
   const reviewedHODApprovals = divisionLeaves.filter((l) => {
     const approverRole = l.approverRole ?? l.approver_role;
@@ -809,6 +842,18 @@ function HODDashboard() {
           )}
 
          
+
+          {activeTab === "apply-leave" && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
+              <ApplyLeave />
+            </div>
+          )}
+
+          {activeTab === "my-leaves" && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
+              <Myleaves />
+            </div>
+          )}
 
           {activeTab === "reports" && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">

@@ -88,8 +88,10 @@ function getStoredUser() {
 }
 
 export function UserProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(() => getStoredUser() || DEFAULT_USER);
-  const [employees, setEmployees] = useState(ALL_EMPLOYEES);
+  // Start with the stored user if available; DO NOT fall back to DEFAULT_USER
+  // so that a fresh browser or after logout no demo data is shown.
+  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+  const [employees, setEmployees] = useState([]);
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getStoredUser()));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -242,6 +244,44 @@ export function UserProvider({ children }) {
         return;
       }
 
+      // ✅ EXECUTIVE OFFICER
+      if (role === 'executive_officer') {
+        const res = await fetch(apiUrl("/api/admin/employees/acting-officers"), {
+          headers: { 
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setEmployees(data);
+          } else {
+            setEmployees([]); 
+          }
+          setLoading(false);
+          return;
+        } else if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          setCurrentUser(DEFAULT_USER);
+          setIsAuthenticated(false);
+          setEmployees(ALL_EMPLOYEES);
+          setLoading(false);
+          return;
+        }
+        
+        // Fallback: Filter the local list for the EO's division
+        const filtered = ALL_EMPLOYEES.filter(emp => 
+          emp.division === userDivision && 
+          emp.status === 'Active'
+        );
+        setEmployees(filtered);
+        setLoading(false);
+        return;
+      }
+
       setEmployees(ALL_EMPLOYEES);
     } catch (err) {
       console.warn("[fetchEmployees] Error:", err.message);
@@ -268,7 +308,13 @@ export function UserProvider({ children }) {
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr);
-        if (user.role === 'admin' || user.role === 'hod' || user.role === 'employee') {
+        // ✅ Added executive_officer
+        if (
+          user.role === 'admin' || 
+          user.role === 'hod' || 
+          user.role === 'employee' || 
+          user.role === 'executive_officer'
+        ) {
           fetchEmployees(token);
         }
       } catch (e) {
@@ -286,7 +332,13 @@ export function UserProvider({ children }) {
         if (token && userStr) {
           try {
             const user = JSON.parse(userStr);
-            if (user.role === 'admin' || user.role === 'hod' || user.role === 'employee') {
+            // ✅ Added executive_officer
+            if (
+              user.role === 'admin' || 
+              user.role === 'hod' || 
+              user.role === 'employee' || 
+              user.role === 'executive_officer'
+            ) {
               fetchEmployees(token);
             }
           } catch (e) {
@@ -414,7 +466,10 @@ export function UserProvider({ children }) {
     setError(null);
     
     try {
-      localStorage.setItem("user", JSON.stringify({ ...DEFAULT_USER, ...normalizedData }));
+      // Store only the actual user data — do NOT spread DEFAULT_USER here,
+      // that causes stale demo-user data (name, email, employeeId, etc.) to
+      // leak into the stored object when fields are missing from the server response.
+      localStorage.setItem("user", JSON.stringify(normalizedData));
       if (token) {
         localStorage.setItem("token", token);
 
@@ -430,9 +485,9 @@ export function UserProvider({ children }) {
   }, [fetchEmployees]);
 
   const logout = useCallback(() => {
-    setCurrentUser(DEFAULT_USER);
+    setCurrentUser(null);
     setIsAuthenticated(false);
-    setEmployees(ALL_EMPLOYEES);
+    setEmployees([]);
     setError(null);
     try {
       localStorage.removeItem("user");

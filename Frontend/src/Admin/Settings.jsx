@@ -4,6 +4,7 @@ import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
+import ApprovalSettings from "../Components/ApprovalSettings.jsx";
 
 function Settings() {
   const { currentUser, leaveEntitlements } = useUser();
@@ -527,6 +528,9 @@ function Settings() {
               </div>
             </div>
           </div>
+
+          {/* ---------- Admin Signature ---------- */}
+          <ApprovalSettings role="admin" />
 
           {/* ---------- Admin Signature ---------- */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">

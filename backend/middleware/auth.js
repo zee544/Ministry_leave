@@ -64,10 +64,29 @@ const requireEmployee = (req, res, next) => {
   next();
 };
 
+/**
+ * Middleware to ensure the authenticated user is a Secretary
+ */
+const requireSecretary = (req, res, next) => {
+  if (!req.user || req.user.role !== 'secretary') {
+    return res.status(403).json({ message: 'Access forbidden. Secretary privileges required.' });
+  }
+  next();
+};
+
+const requireExecutiveOfficer = (req, res, next) => {
+  if (!req.user || req.user.role !== 'executive_officer') {
+    return res.status(403).json({ message: 'Access forbidden. Executive Officer privileges required.' });
+  }
+  next();
+};
+
 module.exports = {
   verifyToken,
   requireAdmin,
   requireHOD,
   requireAdminOrHOD,
   requireEmployee,
+  requireSecretary,
+  requireExecutiveOfficer,
 };

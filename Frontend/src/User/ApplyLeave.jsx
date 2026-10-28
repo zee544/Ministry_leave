@@ -10,6 +10,7 @@ function ApplyLeave() {
     const { addLeave } = useLeaves();
     const { currentUser, employees, fetchEmployees } = useUser();
     const isAdmin = currentUser?.role === "admin";
+    
     const [formData, setFormData] = useState({
         leaveType: "",
         reason: "",
@@ -26,9 +27,10 @@ function ApplyLeave() {
     const [loading, setLoading] = useState(true);
     const [holidayCache, setHolidayCache] = useState({});
 
-    useEffect(() => {
+     useEffect(() => {
         const loadEmployees = async () => {
-            if (currentUser?.role !== "employee") {
+            // ✅ Allow employees, executive officers, HODs, admins, and secretary to fetch colleagues
+            if (!currentUser) {
                 setLoading(false);
                 return;
             }
@@ -82,8 +84,8 @@ function ApplyLeave() {
         yearsInRange(fromDate, toDate).forEach((y) => fetchHolidaysForYear(y));
     }, [formData.fromDate, formData.toDate]);
 
-    useEffect(() => {
-        if (!employees || employees.length === 0 || !currentUser || isAdmin) {
+     useEffect(() => {
+        if (!employees || employees.length === 0 || !currentUser) {
             setActingOfficers([]);
             return;
         }
@@ -95,16 +97,13 @@ function ApplyLeave() {
             if (emp.name?.toLowerCase() === currentUser.name?.toLowerCase()) return false;
             if (emp.status !== "Active") return false;
 
+            if (!userDivisionLower) return true;
             const empDivision = (emp.division || "").toLowerCase().trim();
-            const userDivClean = userDivisionLower.replace("istration", "").replace("istrator", "");
-            const empDivClean = empDivision.replace("istration", "").replace("istrator", "");
-
-            return userDivisionLower === empDivision || userDivClean === empDivClean;
+            return empDivision === userDivisionLower;
         });
 
         setActingOfficers(filtered);
-    }, [employees, currentUser, isAdmin]);
-
+    }, [employees, currentUser]);
     const getAllHolidaysForRange = (from, to) => {
         const years = yearsInRange(from, to);
         const merged = new Set();
@@ -151,15 +150,23 @@ function ApplyLeave() {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        // ✅ 1. Basic Validation
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.noOfDays) {
             alert("Please fill in all required fields");
+            return;
+        }
+
+        // ✅ 2. Enforce Acting Officer only for regular employees
+        const isSenior = ["admin", "hod", "secretary", "executive_officer"].includes(currentUser?.role);
+        if (!isSenior && !formData.actingOfficer) {
+            alert("Please select an Acting Officer.");
             return;
         }
 
         setIsSubmitting(true);
 
         try {
-            const hasActingOfficer = !isAdmin && Boolean(formData.actingOfficer?.trim());
+            const hasActingOfficer = Boolean(formData.actingOfficer?.trim());
 
             const leaveData = {
                 employee: currentUser.name,
@@ -173,6 +180,7 @@ function ApplyLeave() {
                 actingOfficer: hasActingOfficer ? formData.actingOfficer : null,
                 applicantUserId: currentUser.id,
                 applicantRole: currentUser.role,
+                applicantEmail: currentUser.email,
                 reason: formData.reason,
                 address: formData.address,
                 additionalInfo: formData.additionalInfo,
@@ -192,7 +200,6 @@ function ApplyLeave() {
                     currentUser.division,
                 );
             } else if (hasActingOfficer) {
-                // Acting officer selected — normal flow
                 addNotification(
                     `You have been assigned as Acting Officer for ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}). Please confirm.`,
                     "acting_officer",
@@ -214,7 +221,6 @@ function ApplyLeave() {
                     currentUser.division,
                 );
             } else {
-                // No acting officer — direct to Admin
                 addNotification(
                     `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Admin approval.`,
                     "status_update",
@@ -251,8 +257,8 @@ function ApplyLeave() {
         }
     };
 
-   const inputBaseClass =
-    "w-full px-2.5 sm:px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-xs sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500 transition-colors placeholder-gray-400 [color-scheme:light] dark:[color-scheme:dark]";
+    const inputBaseClass =
+        "w-full px-2.5 sm:px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-xs sm:text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500 transition-colors placeholder-gray-400 [color-scheme:light] dark:[color-scheme:dark]";
     const labelClass =
         "block text-[11px] sm:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1";
 
@@ -358,17 +364,19 @@ function ApplyLeave() {
                         />
                     </div>
 
-                    {!isAdmin && (
+                                      {/* ✅ 3. Acting Officer field — required for employees and EOs */}
+                    {currentUser.role !== "admin" && (
                         <div className="col-span-1 sm:col-span-2">
-                            <label className={labelClass}>Acting Officer (Optional)</label>
+                            <label className={labelClass}>Acting Officer *</label>
                             <select
                                 name="actingOfficer"
                                 value={formData.actingOfficer}
                                 onChange={handleChange}
                                 className={inputBaseClass}
+                                required
                             >
-                                <option value="">None — submit directly to Admin</option>
-                                {loading ? (
+                                <option value="">Select an Acting Officer (Required)</option>
+                                {/* ... rest of the options ... */}{loading ? (
                                     <option disabled>Loading officers...</option>
                                 ) : actingOfficers.length === 0 ? (
                                     <option disabled>No officers available in your division</option>
@@ -384,10 +392,8 @@ function ApplyLeave() {
                                 {loading
                                     ? "Loading..."
                                     : actingOfficers.length === 0
-                                        ? "No active officers in your division"
-                                        : formData.actingOfficer
-                                            ? `Will be sent to ${formData.actingOfficer} for confirmation first`
-                                            : "Leave empty to send directly to Admin"}
+                                        ? "No active officers in your division. Please contact your administrator."
+                                        : "You must select an acting officer to handle your duties while on leave."}
                             </p>
                         </div>
                     )}
@@ -406,7 +412,11 @@ function ApplyLeave() {
                     <div className="col-span-1 sm:col-span-2">
                         <button
                             type="submit"
-                            disabled={isSubmitting || loading}
+                            disabled={
+                                isSubmitting || 
+                                loading || 
+                                (!isAdmin && !formData.actingOfficer)
+                            }
                             className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-teal-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? "Submitting..." : "Submit Leave Request"}

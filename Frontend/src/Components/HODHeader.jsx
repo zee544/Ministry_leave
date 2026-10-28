@@ -55,6 +55,8 @@ function HODHeader({ activeTab, onMenuToggle }) {
                         <h1 className="text-lg lg:text-2xl font-bold text-gray-800 dark:text-white truncate">
                             {activeTab === "dashboard" && "Dashboard"}
                             {activeTab === "leaves" && "Leave Approvals"}
+                            {activeTab === "apply-leave" && "Apply for Leave"}
+                            {activeTab === "my-leaves" && "My Leaves"}
                             {activeTab === "reports" && "Reports"}
                             {activeTab === "settings" && "Settings"}
                         </h1>

@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS `admins` (
 -- 12. Technical:                    admin.tech@ministry.gov.lk      / Tech#2026!Cyber
 
 -- ---------------------------------------------------------------------
--- 3. Heads of Division
+-- 3. Heads of Division (Multiple HODs per division supported)
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `hod` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -83,6 +83,42 @@ CREATE TABLE IF NOT EXISTS `hod` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_hod_division` (`division`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------
+-- 3b. Executive Officers
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `executive_officers` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL,
+  `email` VARCHAR(150) NOT NULL UNIQUE,
+  `password` VARCHAR(255) NOT NULL,
+  `division` VARCHAR(100) NOT NULL,
+  `role` VARCHAR(50) DEFAULT 'executive_officer',
+  `designation` VARCHAR(100) DEFAULT 'Executive Officer',
+  `employee_id` VARCHAR(50),
+  `signature_image` MEDIUMTEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_eo_division` (`division`),
+  INDEX `idx_eo_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------
+-- 3c. Secretary
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `secretary` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL,
+  `email` VARCHAR(150) NOT NULL UNIQUE,
+  `password` VARCHAR(255) NOT NULL,
+  `role` VARCHAR(50) DEFAULT 'secretary',
+  `designation` VARCHAR(100) DEFAULT 'Secretary',
+  `employee_id` VARCHAR(50),
+  `signature_image` MEDIUMTEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_sec_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------
@@ -127,11 +163,47 @@ CREATE TABLE IF NOT EXISTS `leaves` (
   `declined_by` VARCHAR(50) DEFAULT NULL,
   `decline_reason` TEXT,
   `acting_officer_confirmed` BOOLEAN NOT NULL DEFAULT FALSE,
+  `approved_by` VARCHAR(100) DEFAULT NULL,
+  `approver_role` VARCHAR(50) DEFAULT NULL,
+  `approved_by_id` INT DEFAULT NULL,
+  `target_approver_id` INT DEFAULT NULL,
+  `target_approver_role` VARCHAR(50) DEFAULT NULL,
+  `target_approver_email` VARCHAR(150) DEFAULT NULL,
+  `approver_signature` MEDIUMTEXT DEFAULT NULL,
+  `admin_signature` MEDIUMTEXT DEFAULT NULL,
+  `applicant_signature` MEDIUMTEXT DEFAULT NULL,
+  `acting_officer_signature` MEDIUMTEXT DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_leave_division` (`division`),
   INDEX `idx_leave_status` (`status`),
   INDEX `idx_leave_applied_on` (`applied_on`),
-  INDEX `idx_leave_applicant` (`applicant_user_id`, `applicant_role`)
+  INDEX `idx_leave_applicant` (`applicant_user_id`, `applicant_role`),
+  INDEX `idx_leave_target_approver` (`target_approver_role`, `target_approver_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------
+-- 5b. Approval Rules & Organizational Hierarchy Table
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `approval_rules` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `rule_type` VARCHAR(50) NOT NULL DEFAULT 'USER_HIERARCHY', -- 'USER_HIERARCHY' or 'DIVISION_DEFAULT'
+  `division` VARCHAR(100) NULL,
+  `applicant_role` VARCHAR(50) NULL,
+  `applicant_id` INT NULL,
+  `applicant_email` VARCHAR(150) NULL,
+  `applicant_name` VARCHAR(100) NULL,
+  `approver_role` VARCHAR(50) NOT NULL,
+  `approver_id` INT NULL,
+  `approver_email` VARCHAR(150) NULL,
+  `approver_name` VARCHAR(100) NULL,
+  `stage` INT DEFAULT 1,
+  `require_admin_approval` BOOLEAN DEFAULT TRUE,
+  `description` VARCHAR(255) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_rule_applicant` (`applicant_role`, `applicant_id`, `applicant_email`),
+  INDEX `idx_rule_approver` (`approver_role`, `approver_id`, `approver_email`),
+  INDEX `idx_rule_division` (`division`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------

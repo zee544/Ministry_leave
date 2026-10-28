@@ -18,7 +18,8 @@ router.get('/divisions-status', async (req, res) => {
         d.name, 
         d.code,
         EXISTS(SELECT 1 FROM admins a WHERE a.division = d.name) AS hasAdmin,
-        EXISTS(SELECT 1 FROM hod h WHERE h.division = d.name) AS hasHOD
+        EXISTS(SELECT 1 FROM hod h WHERE h.division = d.name) AS hasHOD,
+        (SELECT COUNT(*) FROM hod h WHERE h.division = d.name) AS hodCount
       FROM divisions d 
       ORDER BY d.name ASC
     `);
@@ -30,6 +31,7 @@ router.get('/divisions-status', async (req, res) => {
         code: r.code,
         hasAdmin: Boolean(r.hasAdmin),
         hasHOD: Boolean(r.hasHOD),
+        hodCount: Number(r.hodCount || 0),
       }))
     );
   } catch (error) {
@@ -121,18 +123,28 @@ router.post('/hod-signup', async (req, res) => {
 
     const exactDivisionName = divRows[0].name;
 
+    // Check email across all role tables
     const [existingEmailAdmin] = await pool.query('SELECT id FROM admins WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     const [existingEmailHOD] = await pool.query('SELECT id FROM hod WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
-    if (existingEmailAdmin.length > 0 || existingEmailHOD.length > 0) {
+    const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    let existingEmailEO = [];
+    let existingEmailSec = [];
+    try {
+      [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+      [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    } catch (e) {}
+
+    if (
+      existingEmailAdmin.length > 0 ||
+      existingEmailHOD.length > 0 ||
+      existingEmailEmp.length > 0 ||
+      existingEmailEO.length > 0 ||
+      existingEmailSec.length > 0
+    ) {
       return res.status(409).json({ message: 'An account with this email address is already registered.' });
     }
 
-    const [existingHOD] = await pool.query('SELECT id, name, email FROM hod WHERE LOWER(division) = LOWER(?) LIMIT 1', [exactDivisionName]);
-    if (existingHOD.length > 0) {
-      return res.status(400).json({
-        message: `A Head of Division is already registered for "${exactDivisionName}" division (${existingHOD[0].name}). Each division has only one HOD.`,
-      });
-    }
+    // Multiple HODs per division are fully supported. No single-HOD restriction.
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
@@ -207,16 +219,7 @@ router.post('/executive-officer-signup', async (req, res) => {
       return res.status(409).json({ message: 'An account with this email address is already registered.' });
     }
 
-    // One Executive Officer per division (adjust if you need multiple)
-    const [existingEO] = await pool.query(
-      'SELECT id, name, email FROM executive_officers WHERE LOWER(division) = LOWER(?) LIMIT 1',
-      [exactDivisionName]
-    );
-    if (existingEO.length > 0) {
-      return res.status(400).json({
-        message: `An Executive Officer is already registered for "${exactDivisionName}" division (${existingEO[0].name}). Each division has only one Executive Officer.`,
-      });
-    }
+ 
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
@@ -819,8 +822,6 @@ router.post('/reset-password', async (req, res) => {
 
 /**
  * @route   GET /api/auth/profile
- * @desc    Get own profile (any authenticated user)
- * @access  Private
  */
 router.get('/profile', verifyToken, async (req, res) => {
   const userId = req.user.id;
@@ -830,6 +831,8 @@ router.get('/profile', verifyToken, async (req, res) => {
     let tableName;
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
+    else if (role === 'executive_officer') tableName = 'executive_officers'; // ✅ Added EO
+    else if (role === 'secretary') tableName = 'secretary';
     else tableName = 'employees';
 
     let query;
@@ -849,14 +852,43 @@ router.get('/profile', verifyToken, async (req, res) => {
 
     const profile = rows[0];
 
-    // Build employeeId for employees
+    // Build employeeId
     let employeeId = profile.employee_id;
     if (role === 'employee') {
       employeeId = `EMP-${String(profile.id).padStart(4, '0')}`;
     } else if (!employeeId) {
-      employeeId = role === 'admin'
-        ? `EMP-ADM-${String(profile.id).padStart(2, '0')}`
-        : `HOD-${String(profile.id).padStart(4, '0')}`;
+      if (role === 'admin') employeeId = `EMP-ADM-${String(profile.id).padStart(2, '0')}`;
+      else if (role === 'hod') employeeId = `HOD-${String(profile.id).padStart(4, '0')}`;
+      else if (role === 'executive_officer') employeeId = `EO-${String(profile.id).padStart(4, '0')}`;
+      else if (role === 'secretary') employeeId = `SEC-${String(profile.id).padStart(4, '0')}`;
+    }
+
+    // ✅ Add mock leave stats for EO
+    let leaveBalance = null;
+    if (role === 'executive_officer') {
+      leaveBalance = {
+        annualTotal: 45,
+        annualUsed: 0,
+        casualTotal: 15,
+        casualUsed: 0,
+      };
+      
+      try {
+        const [usedRows] = await pool.query(
+          `SELECT 
+             SUM(CASE WHEN type = 'Annual' THEN no_of_days ELSE 0 END) as annual_used,
+             SUM(CASE WHEN type = 'Casual' THEN no_of_days ELSE 0 END) as casual_used
+           FROM leaves 
+           WHERE applicant_user_id = ? AND applicant_role = 'executive_officer' AND status = 'Approved'`,
+          [userId]
+        );
+        if (usedRows.length > 0) {
+          leaveBalance.annualUsed = Number(usedRows[0].annual_used) || 0;
+          leaveBalance.casualUsed = Number(usedRows[0].casual_used) || 0;
+        }
+      } catch (e) {
+        console.warn('Could not fetch leave balance:', e.message);
+      }
     }
 
     return res.status(200).json({
@@ -869,6 +901,7 @@ router.get('/profile', verifyToken, async (req, res) => {
       status: profile.status || 'Active',
       role,
       employeeId,
+      leaveBalance,
     });
   } catch (error) {
     console.error('[Auth Error] /profile:', error);

@@ -9,6 +9,10 @@ const UserDashboard = lazy(() => import("./User/userDashboard.jsx"));
 const HODDashboard = lazy(() => import("./HOD/hoddashboard.jsx"));
 const HODSignup = lazy(() => import("./HODSignup.jsx"));
 const ResetPassword = lazy(() => import("./ResetPassword.jsx"));
+const SecretaryDashboard = lazy(() => import("./Secretary/SecretaryDashboard.jsx"));
+const ExecutiveOfficerDashboard = lazy(() => import("./Executive/ExecutiveOfficerDashboard.jsx"));
+const SecretarySignup = lazy(() => import("./pages/SecretarySignup.jsx"));
+const ExecutiveOfficerSignup = lazy(() => import("./pages/ExecutiveOfficerSignup.jsx"));
 
 export default function AppRoutes() {
   return (
@@ -17,6 +21,8 @@ export default function AppRoutes() {
         <Route path="/" element={<Login />} />
         <Route path="/admin-signup" element={<AdminSignup />} />
         <Route path="/hod-signup" element={<HODSignup />} />
+        <Route path="/secretary-signup" element={<SecretarySignup />} />
+        <Route path="/executive-officer-signup" element={<ExecutiveOfficerSignup />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/Admindashboard"
@@ -39,6 +45,22 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute roles={["hod"]}>
               <HODDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretarydashboard"
+          element={
+            <ProtectedRoute roles={["secretary"]}>
+              <SecretaryDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executive-officer-dashboard"
+          element={
+            <ProtectedRoute roles={["executive_officer"]}>
+              <ExecutiveOfficerDashboard />
             </ProtectedRoute>
           }
         />

@@ -3,6 +3,8 @@ import { useUser } from "../hooks/UserContext.jsx";
 import {
     LayoutDashboard,
     ClipboardList,
+    CalendarPlus,
+    FileText,
     BarChart3,
     Settings,
     LogOut,
@@ -15,10 +17,12 @@ function HODSidebar({ activeTab, onTabChange, isOpen, onClose }) {
     const { logout, currentUser } = useUser();
 
     const sidebarItems = [
-        { key: "dashboard", label: "Dashboard",       icon: LayoutDashboard },
-        { key: "leaves",    label: "Leave Approvals", icon: ClipboardList   },
-        { key: "reports",   label: "Reports",         icon: BarChart3       },
-        { key: "settings",  label: "Settings",        icon: Settings        },
+        { key: "dashboard",   label: "Dashboard",       icon: LayoutDashboard },
+        { key: "leaves",      label: "Leave Approvals", icon: ClipboardList   },
+        { key: "apply-leave", label: "Apply for Leave", icon: CalendarPlus    },
+        { key: "my-leaves",   label: "My Leaves",        icon: FileText        },
+        { key: "reports",     label: "Reports",         icon: BarChart3       },
+        { key: "settings",    label: "Settings",        icon: Settings        },
     ];
 
     const handleLogout = () => {

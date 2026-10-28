@@ -78,7 +78,10 @@ function AdminDashboard() {
 
   const userDivision = currentUser?.division || "Administration";
   const divisionLeaves = leaves.filter((l) => {
-    if (l.applicantRole === "admin" || l.applicant_role === "admin") return false;
+    const role = l.applicantRole ?? l.applicant_role;
+    // ✅ Hide admin and EO leaves from the main dashboard tables
+    if (role === "admin" || role === "executive_officer") return false;
+    
     const leaveDiv = (l.division || "").toLowerCase();
     const userDiv = userDivision.toLowerCase();
     return (

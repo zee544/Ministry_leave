@@ -3,9 +3,14 @@ import { useUser } from "../hooks/UserContext.jsx";
 import { useSignatures } from "../hooks/SignatureContext.jsx";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
 import { apiUrl } from "../api.js";
+import ApprovalSettings from "../Components/ApprovalSettings.jsx";
 function HODSettings() {
   const { currentUser } = useUser();
   const { getSignature } = useSignatures();
+
+  // Use a user-ID-scoped key so each HOD's signature is stored separately in localStorage
+  // Falls back to role-only key for backwards compatibility if ID is missing
+  const signatureKey = currentUser?.id ? `hod_${currentUser.id}` : "hod";
 
   const [profile, setProfile] = useState(null);
   const [adminInfo, setAdminInfo] = useState(null);
@@ -151,7 +156,8 @@ function HODSettings() {
     setSavingSignature(true);
     try {
       const token = localStorage.getItem("token");
-      const signature = getSignature("hod");
+      // Use the user-ID-scoped key so each HOD saves their own signature
+      const signature = getSignature(signatureKey);
       const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
@@ -436,6 +442,9 @@ function HODSettings() {
           </div>
 
           {/* ============ HOD Signature ============ */}
+          <ApprovalSettings role="hod" />
+
+          {/* ============ HOD Signature ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
               <div className="min-w-0">
@@ -449,7 +458,7 @@ function HODSettings() {
             </div>
 
             <div className="px-4 sm:px-6 py-4 sm:py-5">
-              <SignatureUpload signatureKey="hod" label="HOD Signature" />
+              <SignatureUpload signatureKey={signatureKey} label="HOD Signature" />
               <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3">
                 This signature will be automatically applied to all printed
                 leave forms as the Head of Division.

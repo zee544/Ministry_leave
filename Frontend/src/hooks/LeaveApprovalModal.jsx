@@ -231,8 +231,6 @@ export default function LeaveApprovalModal({
   const isAdminFinalized =
     approverRoleLower === "admin" ||
     approvedByLower === "admin" ||
-    approvedByLower.includes("admin") ||
-    approverRoleLower.includes("admin") ||
     status === "Admin Approved" ||
     selectedLeave?.adminApproved === true;
 
@@ -244,7 +242,15 @@ export default function LeaveApprovalModal({
     approverRoleLower.includes("hod") ||
     approverRoleLower.includes("head");
 
-  // ✅ FIX: Admin signed detection — covers ALL cases where admin has acted
+  const isSecretaryFinalized =
+    approverRoleLower === "secretary" ||
+    approvedByLower === "secretary" ||
+    approvedByLower.includes("secretary");
+
+  const isFinalApprovedBySenior =
+    isHodFinalized || isSecretaryFinalized;
+
+  // ✅ FIX: Admin signed detection — only true if admin actually recommended or approved
   const adminApprovedOnValue =
     selectedLeave?.adminApprovedOn ||
     selectedLeave?.admin_approved_on ||
@@ -254,22 +260,28 @@ export default function LeaveApprovalModal({
     '';
 
   const adminHasSigned =
-    !isAdminLeave && (
-      isAdminFinalized ||
+    !isAdminLeave &&
+    !isSecretaryFinalized &&
+    (
+      (isAdminFinalized && approverRoleLower === "admin") ||
       declinedBy === "Admin" ||
       declinedBy === "admin" ||
       status === "Admin Approved" ||
       selectedLeave?.adminApproved === true ||
-      String(adminApprovedOnValue).trim() !== '' ||
-      // If final approved by HOD, admin must have approved earlier
-      (isApproved && isHodFinalized)
+      selectedLeave?.recommendedByAdmin === true ||
+      selectedLeave?.recommended_by_admin === 1 ||
+      selectedLeave?.adminSignature ||
+      selectedLeave?.admin_signature ||
+      String(adminApprovedOnValue).trim() !== ''
     );
 
-  // ✅ FIX: HOD signed if HOD approved or declined
+  // ✅ FIX: HOD / Senior / Secretary signed if approved or declined
   const hodHasSigned =
-    isHodFinalized ||
+    isFinalApprovedBySenior ||
     declinedBy === "HOD" ||
-    declinedBy === "hod";
+    declinedBy === "hod" ||
+    declinedBy === "Secretary" ||
+    declinedBy === "secretary";
 
   const isActingConfirmed = hasActingOfficer && (
     selectedLeave?.actingOfficerConfirmed === true ||
@@ -292,17 +304,17 @@ export default function LeaveApprovalModal({
     adminDecision = adminHasSigned ? "recommended" : "pending";
   } else if (status === "Admin Approved") {
     adminDecision = "recommended";
-  } else if (isDeclined && declinedBy === "HOD") {
+  } else if (isDeclined && (declinedBy === "HOD" || declinedBy === "Secretary")) {
     adminDecision = adminHasSigned ? "recommended" : "pending";
   } else if (isDeclined && !declinedBy) {
     adminDecision = "not_recommended";
   }
 
-  // --- HOD decision box ---
+  // --- HOD / Senior Approver decision box ---
   let hodDecision = "pending";
-  if (isApproved && isHodFinalized) {
+  if (isApproved && isFinalApprovedBySenior) {
     hodDecision = "allowed";
-  } else if (isDeclined && declinedBy === "HOD") {
+  } else if (isDeclined && (declinedBy === "HOD" || declinedBy === "Secretary")) {
     hodDecision = "not_allowed";
   } else if (isApproved && isAdminFinalized) {
     hodDecision = "pending";
@@ -312,15 +324,18 @@ export default function LeaveApprovalModal({
 
   const effectiveAdminDecision = isAdminLeave ? "pending" : adminDecision;
 
-  const applicantSignature = isAdminLeave
-    ? getSignature("admin")
-    : getSignature(selectedLeave?.employee);
+  const applicantSignature =
+    selectedLeave?.applicantSignature ||
+    selectedLeave?.applicant_signature ||
+    (isAdminLeave ? getSignature("admin") : getSignature(selectedLeave?.employee));
 
   const actingOfficerSignature = hasActingOfficer
-    ? getSignature(selectedLeave?.actingOfficer)
+    ? (selectedLeave?.actingOfficerSignature ||
+       selectedLeave?.acting_officer_signature ||
+       getSignature(selectedLeave?.actingOfficer))
     : null;
 
-  // ✅ FIX: Admin signature — try multiple name sources in priority order
+  // ✅ Admin signature — check backend leave payload first, then SignatureContext
   const adminNameCandidates = [
     selectedLeave?.adminName,
     selectedLeave?.admin_name,
@@ -331,13 +346,16 @@ export default function LeaveApprovalModal({
     (approvedBy && approvedByLower !== 'admin' ? approvedBy : null),
   ].filter(Boolean);
 
-  let adminSignature = null;
-  if (adminHasSigned) {
+  let adminSignature =
+    selectedLeave?.adminSignature ||
+    selectedLeave?.admin_signature ||
+    null;
+
+  if (!adminSignature && adminHasSigned) {
     for (const candidate of adminNameCandidates) {
       const sig = getSignature(candidate);
       if (sig) { adminSignature = sig; break; }
     }
-    // Fallbacks: role keys commonly used in SignatureContext
     if (!adminSignature) {
       adminSignature =
         getSignature("admin") ||
@@ -348,20 +366,31 @@ export default function LeaveApprovalModal({
     }
   }
 
-  // ✅ FIX: HOD signature
+  // ✅ HOD / Secretary / Senior approver signature
   const hodNameCandidates = [
+    selectedLeave?.approvedBy,
+    selectedLeave?.approved_by,
     selectedLeave?.hodName,
     selectedLeave?.hod_name,
     selectedLeave?.approvedByName,
     selectedLeave?.approved_by_name,
-    (approvedBy && approvedByLower !== 'hod' ? approvedBy : null),
+    (approvedBy && approvedByLower !== 'hod' && approvedByLower !== 'secretary' ? approvedBy : null),
   ].filter(Boolean);
 
-  let hodSignature = null;
-  if (hodHasSigned) {
+  let hodSignature =
+    selectedLeave?.approverSignature ||
+    selectedLeave?.approver_signature ||
+    selectedLeave?.hodSignature ||
+    selectedLeave?.hod_signature ||
+    null;
+
+  if (!hodSignature && hodHasSigned) {
     for (const candidate of hodNameCandidates) {
       const sig = getSignature(candidate);
       if (sig) { hodSignature = sig; break; }
+    }
+    if (!hodSignature && isSecretaryFinalized) {
+      hodSignature = getSignature("secretary") || getSignature("Secretary") || null;
     }
     if (!hodSignature) {
       hodSignature =
@@ -617,11 +646,17 @@ export default function LeaveApprovalModal({
                   </div>
 
                   <div className="col-span-3 p-0.5 text-center flex flex-col justify-end">
-                    <SignatureImg src={hodSignature} name="Head of Dept" isSigned={hodHasSigned} date={hodHasSigned ? hodSignedDate : ""} className="w-full mb-0.5" />
+                    <SignatureImg
+                      src={hodSignature}
+                      name={approvedBy || (isSecretaryFinalized ? "Secretary" : "Head of Dept")}
+                      isSigned={hodHasSigned}
+                      date={hodHasSigned ? hodSignedDate : ""}
+                      className="w-full mb-0.5"
+                    />
                     <div className="text-[9px] font-bold leading-tight print-sinhala-tamil-english print-signature-label">
-                      <p>දෙපාර්තමේන්තු ප්‍රධානියා</p>
-                      <p>திணைக்களத் தலைவர்</p>
-                      <p>Head of Department</p>
+                      <p>දෙපාර්තමේන්තු ප්‍රධානියා{isSecretaryFinalized ? " / ලේකම්" : ""}</p>
+                      <p>திணைக்களத் தலைவர்{isSecretaryFinalized ? " / செயலாளர்" : ""}</p>
+                      <p>Head of Department{isSecretaryFinalized ? " / Secretary" : ""}</p>
                     </div>
                   </div>
                 </div>
@@ -686,7 +721,7 @@ export default function LeaveApprovalModal({
                       </div>
                       <div className="p-1 text-center flex flex-col justify-center">
                         {hodDecision === "allowed" ? (
-                          <SignatureImg src={hodSignature} name="Head of Dept" isSigned={true} date={hodSignedDate} className="w-full mb-0.5" />
+                          <SignatureImg src={hodSignature} name={approvedBy || (isSecretaryFinalized ? "Secretary" : "Head of Dept")} isSigned={true} date={hodSignedDate} className="w-full mb-0.5" />
                         ) : hodDecision === "not_allowed" ? (
                           <div className="border-b border-dashed border-black min-h-4 flex items-center justify-center text-[6px] text-red-600 italic"></div>
                         ) : (

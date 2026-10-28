@@ -25,19 +25,20 @@ router.get('/', verifyToken, async (req, res) => {
           created_at as timestamp
         FROM notifications
         WHERE recipient = 'admin'
-          AND (division = ? OR division IS NULL)
+          AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)
         ORDER BY created_at DESC
         LIMIT 100
       `;
       params = [userDivision];
     } else if (role === 'hod') {
+      // Scope HOD notifications strictly to their division — no NULL/global bleed across HODs
       query = `
         SELECT id, message, type, recipient, division, link,
           read_status as \`read\`,
           created_at as timestamp
         FROM notifications
         WHERE recipient = 'hod'
-          AND (division = ? OR division IS NULL)
+          AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))
         ORDER BY created_at DESC
         LIMIT 100
       `;
@@ -124,10 +125,10 @@ router.patch('/:id/read', verifyToken, async (req, res) => {
     let ownershipParams;
 
     if (role === 'admin') {
-      ownershipQuery = `recipient = 'admin' AND (division = ? OR division IS NULL)`;
+      ownershipQuery = `recipient = 'admin' AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
       ownershipParams = [userDivision];
     } else if (role === 'hod') {
-      ownershipQuery = `recipient = 'hod' AND (division = ? OR division IS NULL)`;
+      ownershipQuery = `recipient = 'hod' AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
       ownershipParams = [userDivision];
     } else {
       ownershipQuery = `recipient = ?`;
@@ -167,11 +168,11 @@ router.patch('/read-all', verifyToken, async (req, res) => {
 
     if (role === 'admin') {
       query = `UPDATE notifications SET read_status = 1 
-               WHERE recipient = 'admin' AND (division = ? OR division IS NULL)`;
+               WHERE recipient = 'admin' AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
       params = [userDivision];
     } else if (role === 'hod') {
       query = `UPDATE notifications SET read_status = 1 
-               WHERE recipient = 'hod' AND (division = ? OR division IS NULL)`;
+               WHERE recipient = 'hod' AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
       params = [userDivision];
     } else {
       query = `UPDATE notifications SET read_status = 1 WHERE recipient = ?`;

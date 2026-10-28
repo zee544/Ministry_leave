@@ -22,9 +22,11 @@ function LeaveApprove() {
   const approvalInFlight = useRef(false);
 
   const userDivision = currentUser?.division || "Administration";
-  const divisionLeaves = leaves.filter(
-    (l) => l.division === userDivision && (l.applicantRole ?? l.applicant_role) !== "admin"
-  );
+  const divisionLeaves = leaves.filter((l) => {
+    const role = l.applicantRole ?? l.applicant_role;
+    // ✅ Hide admin and EO leaves from Admin's approval table
+    return l.division === userDivision && role !== "admin" && role !== "executive_officer";
+  });
 
   const askApprove = (item) => setConfirmModal({ open: true, leave: item, action: "approve" });
   const askDecline = (item) => setConfirmModal({ open: true, leave: item, action: "decline" });

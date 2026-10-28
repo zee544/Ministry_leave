@@ -358,23 +358,31 @@ export function NotificationProvider({ children }) {
       const normalize = (s) => (s || "").toString().trim().toLowerCase();
 
       return notifications.filter((n) => {
-        let divisionMatch = true;
+        // The backend already scopes notifications to the current user's role + division.
+        // We only need to do a lightweight client-side filter to match the recipient field.
 
-        if (role === "admin" || role === "hod") {
-          if (!division) {
-            divisionMatch = !n.division;
-          } else {
-            const nDiv = normalize(n.division);
-            const uDiv = normalize(division);
-            divisionMatch =
-              !nDiv ||
-              nDiv === uDiv ||
-              nDiv.replace("istration", "") === uDiv.replace("istration", "");
-          }
+        if (role === "admin") {
+          // Must be an admin-targeted notification in the same division (or global)
+          if (n.recipient !== "admin") return false;
+          if (!division) return !n.division;
+          const nDiv = normalize(n.division);
+          const uDiv = normalize(division);
+          return !nDiv || nDiv === uDiv;
         }
 
-        if (role === "admin") return n.recipient === "admin" && divisionMatch;
-        if (role === "hod") return n.recipient === "hod" && divisionMatch;
+        if (role === "hod") {
+          // Must be a hod-targeted notification in the exact same division (or global)
+          if (n.recipient !== "hod") return false;
+          if (!division) return !n.division;
+          const nDiv = normalize(n.division);
+          const uDiv = normalize(division);
+          // Strict exact match — no fuzzy substring stripping that bleeds across divisions
+          return !nDiv || nDiv === uDiv;
+        }
+
+        if (role === "secretary" || role === "executive_officer") {
+          return n.recipient === role || n.recipient === userName;
+        }
 
         if (role === "employee") {
           return (
@@ -383,6 +391,7 @@ export function NotificationProvider({ children }) {
             (n.type === "status_update" && n.recipient === userName)
           );
         }
+
         return false;
       });
     },

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { apiUrl } from "../api.js";
+
 const LeaveContext = createContext();
 
 const sortByAppliedDateDesc = (items) => {
@@ -15,9 +16,7 @@ const normalizeLeave = (leave) => ({
   applicantUserId: leave.applicantUserId ?? leave.applicant_user_id,
   applicantRole: leave.applicantRole ?? leave.applicant_role,
   actingOfficerConfirmed:
-    leave.acting_officer_confirmed ??
-    leave.actingOfficerConfirmed ??
-    false,
+    leave.acting_officer_confirmed ?? leave.actingOfficerConfirmed ?? false,
   approvedBy: leave.approvedBy ?? leave.approved_by ?? null,
   approverRole: leave.approverRole ?? leave.approver_role ?? null,
 });
@@ -48,13 +47,16 @@ export function LeaveProvider({ children }) {
       }
 
       const user = JSON.parse(userStr);
-      console.log(`Fetching leaves for role: ${user.role}`);
 
       let endpoint;
       if (user.role === "admin") {
         endpoint = "/api/admin/leaves";
       } else if (user.role === "hod") {
         endpoint = "/api/admin/hod/leaves";
+      } else if (user.role === "secretary") {
+        endpoint = "/api/admin/leaves/all";
+      } else if (user.role === "executive_officer") {
+        endpoint = "/api/admin/leaves/division";
       } else {
         endpoint = "/api/admin/leaves/employee";
       }
@@ -81,28 +83,36 @@ export function LeaveProvider({ children }) {
 
       if (res.ok) {
         const data = await res.json();
-        let personalAdminLeaves = [];
-        if (user.role === "admin") {
-          const personalResponse = await fetch(apiUrl("/api/admin/leaves/employee"), {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          if (!personalResponse.ok) {
-            throw new Error(`Failed to load personal leave applications (${personalResponse.status}).`);
+
+        const needsPersonalLeaves = ["admin", "hod", "executive_officer"].includes(user.role);
+        let personalLeaves = [];
+
+        if (needsPersonalLeaves) {
+          const personalResponse = await fetch(
+            apiUrl("/api/admin/leaves/employee"),
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          if (personalResponse.ok) {
+            personalLeaves = await personalResponse.json();
           }
-          personalAdminLeaves = await personalResponse.json();
         }
+
         const allLeaves = [
           ...(Array.isArray(data) ? data : []),
-          ...(Array.isArray(personalAdminLeaves)
-            ? personalAdminLeaves.filter(
-              (personalLeave) =>
-                !Array.isArray(data) || !data.some((leave) => leave.id === personalLeave.id)
-            )
+          ...(Array.isArray(personalLeaves)
+            ? personalLeaves.filter(
+                (p) =>
+                  !Array.isArray(data) ||
+                  !data.some((leave) => leave.id === p.id)
+              )
             : []),
         ];
+
         if (allLeaves.length > 0) {
           const mapped = allLeaves.map(normalizeLeave);
           setLeaves(sortByAppliedDateDesc(mapped));
@@ -126,17 +136,20 @@ export function LeaveProvider({ children }) {
     if (!token) return;
     try {
       const res = await fetch(apiUrl("/api/admin/leaves/acting-officer"), {
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           const mapped = data.map(normalizeLeave);
           setLeaves((prev) => {
-            const fetchedById = new Map(mapped.map((leave) => [String(leave.id), leave]));
-            const merged = prev.map((leave) => fetchedById.get(String(leave.id)) || leave);
-            const existingIds = new Set(prev.map((leave) => String(leave.id)));
-            merged.push(...mapped.filter((leave) => !existingIds.has(String(leave.id))));
+            const fetchedById = new Map(mapped.map((l) => [String(l.id), l]));
+            const merged = prev.map((l) => fetchedById.get(String(l.id)) || l);
+            const existingIds = new Set(prev.map((l) => String(l.id)));
+            merged.push(...mapped.filter((l) => !existingIds.has(String(l.id))));
             return sortByAppliedDateDesc(merged);
           });
         }
@@ -150,7 +163,7 @@ export function LeaveProvider({ children }) {
     const token = localStorage.getItem("token");
     if (token) fetchLeaves();
     else setLeaves([]);
-  }, []);
+  }, [fetchLeaves]);
 
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -166,12 +179,10 @@ export function LeaveProvider({ children }) {
 
   useEffect(() => {
     const handleLogin = () => {
-      console.log("[Leaves] auth:login — refetching leaves");
       const token = localStorage.getItem("token");
       if (token) fetchLeaves();
     };
     const handleLogout = () => {
-      console.log("[Leaves] auth:logout — clearing leaves");
       setLeaves([]);
     };
     window.addEventListener("auth:login", handleLogin);
@@ -193,7 +204,10 @@ export function LeaveProvider({ children }) {
     try {
       const response = await fetch(apiUrl("/api/admin/leaves"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           employee: leaveData.employee,
           division: leaveData.division,
@@ -219,7 +233,9 @@ export function LeaveProvider({ children }) {
         };
       } else {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || `Leave submission failed (${response.status}).`);
+        throw new Error(
+          data.message || `Leave submission failed (${response.status}).`
+        );
       }
     } catch (err) {
       console.error("Error saving leave to backend:", err.message);
@@ -243,11 +259,17 @@ export function LeaveProvider({ children }) {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
 
-      const response = await fetch(apiUrl(`/api/admin/leaves/${id}/acting-confirm`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action, reason: reason || null }),
-      });
+      const response = await fetch(
+        apiUrl(`/api/admin/leaves/${id}/acting-confirm`),
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ action, reason: reason || null }),
+        }
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -258,13 +280,15 @@ export function LeaveProvider({ children }) {
       await fetchLeaves();
       if (data.leave) {
         const updatedLeave = normalizeLeave(data.leave);
-        setLeaves((prev) => sortByAppliedDateDesc(
-          prev.map((leave) =>
-            String(leave.id) === String(updatedLeave.id)
-              ? { ...leave, ...updatedLeave }
-              : leave
+        setLeaves((prev) =>
+          sortByAppliedDateDesc(
+            prev.map((leave) =>
+              String(leave.id) === String(updatedLeave.id)
+                ? { ...leave, ...updatedLeave }
+                : leave
+            )
           )
-        ));
+        );
       }
       return data;
     },
@@ -281,35 +305,43 @@ export function LeaveProvider({ children }) {
         recommendedByAdmin: extraProps.recommendedByAdmin || false,
         declinedBy: extraProps.declinedBy || null,
         reason: extraProps.reason || null,
-        // ⭐ NEW
         approvedBy: extraProps.approvedBy || null,
         approverRole: extraProps.approverRole || null,
       };
 
       const res = await fetch(apiUrl(`/api/admin/leaves/${id}/status`), {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.message || `Failed to update leave status (${res.status}).`);
+        throw new Error(
+          data.message || `Failed to update leave status (${res.status}).`
+        );
       }
 
-      setLeaves((prev) => sortByAppliedDateDesc(
-        prev.map((leave) => String(leave.id) === String(id)
-          ? {
-              ...leave,
-              status: data.status || newStatus,
-              recommendedByAdmin: payload.recommendedByAdmin,
-              declinedBy: payload.declinedBy,
-              declineReason: payload.reason,
-              approvedBy: data.approvedBy || payload.approvedBy,
-              approverRole: data.approverRole || payload.approverRole,
-            }
-          : leave)
-      ));
+      setLeaves((prev) =>
+        sortByAppliedDateDesc(
+          prev.map((leave) =>
+            String(leave.id) === String(id)
+              ? {
+                  ...leave,
+                  status: data.status || newStatus,
+                  recommendedByAdmin: payload.recommendedByAdmin,
+                  declinedBy: payload.declinedBy,
+                  declineReason: payload.reason,
+                  approvedBy: data.approvedBy || payload.approvedBy,
+                  approverRole: data.approverRole || payload.approverRole,
+                }
+              : leave
+          )
+        )
+      );
       await fetchLeaves();
       return data;
     },
@@ -321,14 +353,20 @@ export function LeaveProvider({ children }) {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
 
-      const res = await fetch(apiUrl(`/api/admin/leaves/${id}/hod-approve`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          action,
-          reason: extra.reason || null,
-        }),
-      });
+      const res = await fetch(
+        apiUrl(`/api/admin/leaves/${id}/hod-approve`),
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action,
+            reason: extra.reason || null,
+          }),
+        }
+      );
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -336,19 +374,87 @@ export function LeaveProvider({ children }) {
       }
 
       const data = await res.json();
-      setLeaves((prev) => sortByAppliedDateDesc(
-        prev.map((leave) => String(leave.id) === String(id)
-          ? {
-              ...leave,
-              status: data.status || (action === "approve" ? "Approved" : "Declined"),
-              approvedBy: data.approvedBy || (action === "approve" ? "HOD" : null),
-              approverRole: data.approverRole || (action === "approve" ? "hod" : null),
-              ...(action === "decline"
-                ? { declinedBy: "HOD", declineReason: extra.reason || null }
-                : { declinedBy: null, declineReason: null }),
-            }
-          : leave)
-      ));
+      setLeaves((prev) =>
+        sortByAppliedDateDesc(
+          prev.map((leave) =>
+            String(leave.id) === String(id)
+              ? {
+                  ...leave,
+                  status:
+                    data.status ||
+                    (action === "approve" ? "Approved" : "Declined"),
+                  approvedBy:
+                    data.approvedBy || (action === "approve" ? "HOD" : null),
+                  approverRole:
+                    data.approverRole || (action === "approve" ? "hod" : null),
+                  ...(action === "decline"
+                    ? {
+                        declinedBy: "HOD",
+                        declineReason: extra.reason || null,
+                      }
+                    : { declinedBy: null, declineReason: null }),
+                }
+              : leave
+          )
+        )
+      );
+      await fetchLeaves();
+      return data;
+    },
+    [fetchLeaves]
+  );
+
+  const secretaryApprove = useCallback(
+    async (id, action, reason = null) => {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+
+      const res = await fetch(
+        apiUrl(`/api/admin/leaves/${id}/secretary-approve`),
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ action, reason }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.message || `Failed to ${action} leave (${res.status}).`
+        );
+      }
+
+      setLeaves((prev) =>
+        sortByAppliedDateDesc(
+          prev.map((leave) =>
+            String(leave.id) === String(id)
+              ? {
+                  ...leave,
+                  status:
+                    data.status ||
+                    (action === "approve" ? "Approved" : "Declined"),
+                  approvedBy:
+                    data.approvedBy ||
+                    (action === "approve" ? "Secretary" : null),
+                  approverRole:
+                    data.approverRole ||
+                    (action === "approve" ? "secretary" : null),
+                  ...(action === "decline"
+                    ? {
+                        declinedBy: "Secretary",
+                        declineReason: reason || null,
+                      }
+                    : { declinedBy: null, declineReason: null }),
+                }
+              : leave
+          )
+        )
+      );
+
       await fetchLeaves();
       return data;
     },
@@ -369,7 +475,10 @@ export function LeaveProvider({ children }) {
       try {
         const res = await fetch(apiUrl(`/api/admin/leaves/${id}`), {
           method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
             type: updates.type,
             from: updates.from,
@@ -403,18 +512,27 @@ export function LeaveProvider({ children }) {
     try {
       const res = await fetch(apiUrl(`/api/admin/leaves/${id}/cancel`), {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ reason }),
       });
 
       const data = await res.json();
-      if (!res.ok) return { success: false, message: data.message || "Failed to cancel leave" };
+      if (!res.ok)
+        return { success: false, message: data.message || "Failed to cancel leave" };
 
       setLeaves((prev) =>
         sortByAppliedDateDesc(
           prev.map((l) =>
             l.id === id
-              ? { ...l, status: "Cancelled", declinedBy: "Employee", declineReason: reason }
+              ? {
+                  ...l,
+                  status: "Cancelled",
+                  declinedBy: "Employee",
+                  declineReason: reason,
+                }
               : l
           )
         )
@@ -432,11 +550,13 @@ export function LeaveProvider({ children }) {
   );
 
   const getLeavesByEmployee = useCallback(
-    (userId, role) => leaves.filter(
-      (leave) =>
-        Number(leave.applicantUserId ?? leave.applicant_user_id) === Number(userId) &&
-        (role ? (leave.applicantRole ?? leave.applicant_role) === role : true)
-    ),
+    (userId, role) =>
+      leaves.filter(
+        (leave) =>
+          Number(leave.applicantUserId ?? leave.applicant_user_id) ===
+            Number(userId) &&
+          (role ? (leave.applicantRole ?? leave.applicant_role) === role : true)
+      ),
     [leaves]
   );
 
@@ -466,6 +586,7 @@ export function LeaveProvider({ children }) {
     confirmActingOfficer,
     updateLeaveStatus,
     hodApprove,
+    secretaryApprove, // ✅ NEW
     updateLeave,
     cancelLeave,
     getLeavesByStatus,
@@ -476,7 +597,9 @@ export function LeaveProvider({ children }) {
     fetchActingOfficerLeaves,
   };
 
-  return <LeaveContext.Provider value={value}>{children}</LeaveContext.Provider>;
+  return (
+    <LeaveContext.Provider value={value}>{children}</LeaveContext.Provider>
+  );
 }
 
 export function useLeaves() {

@@ -231,6 +231,64 @@ async function setupDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS executive_officers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        division VARCHAR(100) NOT NULL,
+        role VARCHAR(50) DEFAULT 'executive_officer',
+        designation VARCHAR(100) DEFAULT 'Executive Officer',
+        employee_id VARCHAR(50),
+        signature_image MEDIUMTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_eo_division (division),
+        INDEX idx_eo_email (email)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS secretary (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'secretary',
+        designation VARCHAR(100) DEFAULT 'Secretary',
+        employee_id VARCHAR(50),
+        signature_image MEDIUMTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_sec_email (email)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS approval_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rule_type VARCHAR(50) NOT NULL DEFAULT 'USER_HIERARCHY',
+        division VARCHAR(100) NULL,
+        applicant_role VARCHAR(50) NULL,
+        applicant_id INT NULL,
+        applicant_email VARCHAR(150) NULL,
+        applicant_name VARCHAR(100) NULL,
+        approver_role VARCHAR(50) NOT NULL,
+        approver_id INT NULL,
+        approver_email VARCHAR(150) NULL,
+        approver_name VARCHAR(100) NULL,
+        stage INT DEFAULT 1,
+        require_admin_approval BOOLEAN DEFAULT TRUE,
+        description VARCHAR(255) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_rule_applicant (applicant_role, applicant_id, applicant_email),
+        INDEX idx_rule_approver (approver_role, approver_id, approver_email),
+        INDEX idx_rule_division (division)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
     const ensureColumn = async (tableName, columnName, definition) => {
       const [columns] = await conn.query(
         `SELECT COLUMN_NAME
@@ -252,6 +310,8 @@ async function setupDatabase() {
     for (const [tableName, columnName, definition] of [
       ['admins', 'signature_image', 'MEDIUMTEXT NULL'],
       ['hod', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['executive_officers', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['secretary', 'signature_image', 'MEDIUMTEXT NULL'],
       ['employees', 'password', "VARCHAR(255) NOT NULL DEFAULT ''"],
       ['employees', 'must_change_password', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['employees', 'signature_image', 'MEDIUMTEXT NULL'],
@@ -259,6 +319,16 @@ async function setupDatabase() {
       ['leaves', 'acting_officer_confirmed', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['leaves', 'applicant_user_id', 'INT NULL'],
       ['leaves', 'applicant_role', 'VARCHAR(20) NULL'],
+      ['leaves', 'approved_by', 'VARCHAR(100) NULL'],
+      ['leaves', 'approver_role', 'VARCHAR(50) NULL'],
+      ['leaves', 'approved_by_id', 'INT NULL'],
+      ['leaves', 'target_approver_id', 'INT NULL'],
+      ['leaves', 'target_approver_role', 'VARCHAR(50) NULL'],
+      ['leaves', 'target_approver_email', 'VARCHAR(150) NULL'],
+      ['leaves', 'approver_signature', 'MEDIUMTEXT NULL'],
+      ['leaves', 'admin_signature', 'MEDIUMTEXT NULL'],
+      ['leaves', 'applicant_signature', 'MEDIUMTEXT NULL'],
+      ['leaves', 'acting_officer_signature', 'MEDIUMTEXT NULL'],
     ]) {
       const wasAdded = await ensureColumn(tableName, columnName, definition);
       if (tableName === 'leaves' && ['applicant_user_id', 'applicant_role'].includes(columnName)) {

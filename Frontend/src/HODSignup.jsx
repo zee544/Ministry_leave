@@ -169,7 +169,7 @@ function HODSignup() {
           </h3>
           <div className="space-y-4 text-sm text-white/80 border-t border-white/20 pt-6">
             <div>
-              <strong className="text-white">HOD Privileges:</strong> Register as the Head of Division for your division. Each division can have only one HOD.
+              <strong className="text-white">HOD Privileges:</strong> Register as Head of Division for your division. Multiple HODs per division are supported.
             </div>
             <div>
               <strong className="text-white">Final Approvals:</strong> HODs provide final approval for leave applications after admin pre-approval.
@@ -239,10 +239,9 @@ function HODSignup() {
                 <option value="">Select Ministry Division</option>
                 {(divisionsStatus.length > 0 ? divisionsStatus : MINISTRY_DIVISIONS.map((d) => ({ name: d, hasHOD: false }))).map((div) => {
                   const divName = typeof div === "string" ? div : div.name;
-                  const isTaken = div.hasHOD || false;
                   return (
                     <option key={divName} value={divName}>
-                      {divName} {isTaken ? "(HOD Already Registered)" : "(Available)"}
+                      {divName}
                     </option>
                   );
                 })}

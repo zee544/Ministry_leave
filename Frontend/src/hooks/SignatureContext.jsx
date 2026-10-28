@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 
 const SignatureContext = createContext();
 
@@ -17,7 +17,26 @@ function getStoredSignatures() {
 export function SignatureProvider({ children }) {
   const [signatures, setSignatures] = useState(() => getStoredSignatures());
 
-  // Save a signature image (data URL) against a key (person's name or a role like "admin"/"hod")
+  // Listen to auth:logout to clear in-memory signatures (not from localStorage — user keeps theirs)
+  // and auth:login to reload from localStorage for the new user
+  useEffect(() => {
+    const handleLogout = () => {
+      // Clear in-memory signatures on logout so no previous user's data bleeds through
+      setSignatures({});
+    };
+    const handleLogin = () => {
+      // Reload from localStorage (the newly logged-in user's browser may have cached their own)
+      setSignatures(getStoredSignatures());
+    };
+    window.addEventListener("auth:logout", handleLogout);
+    window.addEventListener("auth:login", handleLogin);
+    return () => {
+      window.removeEventListener("auth:logout", handleLogout);
+      window.removeEventListener("auth:login", handleLogin);
+    };
+  }, []);
+
+  // Save a signature image (data URL) against a key (user-ID-scoped: e.g. "hod_42")
   const saveSignature = useCallback((key, dataUrl) => {
     setSignatures((prev) => {
       const next = { ...prev, [key]: dataUrl };

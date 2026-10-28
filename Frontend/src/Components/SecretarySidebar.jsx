@@ -3,6 +3,7 @@ import { useUser } from "../hooks/UserContext.jsx";
 import {
   LayoutDashboard,
   ClipboardList,
+  CalendarPlus,
   FileText,
   BarChart3,
   Settings,
@@ -16,9 +17,11 @@ function SecretarySidebar({ activeTab, onTabChange, isOpen, onClose }) {
   const { logout } = useUser();
 
   const sidebarItems = [
-    { key: "dashboard", label: "Dashboard",                icon: LayoutDashboard },
-    { key: "pending",    label: "Pending Approvals",       icon: FileText        },
-    { key: "settings",   label: "Settings",                icon: Settings        },
+    { key: "dashboard",   label: "Dashboard",          icon: LayoutDashboard },
+    { key: "pending",     label: "Pending Approvals",  icon: FileText        },
+    { key: "apply-leave", label: "Apply for Leave",    icon: CalendarPlus    },
+    { key: "my-leaves",   label: "My Leaves",          icon: ClipboardList   },
+    { key: "settings",    label: "Settings",           icon: Settings        },
   ];
 
   const handleLogout = () => {

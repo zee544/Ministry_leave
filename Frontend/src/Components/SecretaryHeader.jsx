@@ -1,8 +1,63 @@
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import ThemeToggle from "./ThemeToggle";
+import { Bell, FileText, RefreshCw } from "lucide-react";
 
 function SecretaryHeader({ activeTab, onMenuToggle }) {
   const { currentUser } = useUser();
+  const navigate = useNavigate();
+
+  const {
+    getNotificationsForRole,
+    unreadCountForRole,
+    markAndNavigate,
+    markAllAsRead,
+  } = useNotifications();
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef(null);
+
+  const notifications = getNotificationsForRole(
+    "secretary",
+    currentUser?.name,
+    null
+  );
+  const unreadCount = unreadCountForRole(
+    "secretary",
+    currentUser?.name,
+    null
+  );
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const formatTimestamp = (ts) => {
+    const now = new Date();
+    const date = new Date(ts);
+    const diffHrs = Math.floor((now - date) / 3600000);
+    const diffDays = Math.floor(diffHrs / 24);
+    if (diffHrs < 1) return "Just now";
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const handleNotificationClick = (notif) => {
+    setShowNotifications(false);
+    markAndNavigate(notif, navigate);
+  };
 
   return (
     <header className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 lg:px-8 py-3 lg:py-4 rounded-none lg:rounded-2xl transition-colors">
@@ -22,6 +77,8 @@ function SecretaryHeader({ activeTab, onMenuToggle }) {
               {activeTab === "dashboard" && "Secretary Dashboard"}
               {activeTab === "all-leaves" && "All Leave Records"}
               {activeTab === "pending" && "Pending Approvals"}
+              {activeTab === "apply-leave" && "Apply for Leave"}
+              {activeTab === "my-leaves" && "My Leaves"}
               {activeTab === "reports" && "Reports"}
               {activeTab === "settings" && "Settings"}
             </h1>
@@ -36,8 +93,98 @@ function SecretaryHeader({ activeTab, onMenuToggle }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 lg:gap-4 shrink-0">
+        <div className="flex items-center gap-2 lg:gap-4 shrink-0 relative" ref={notifRef}>
           <ThemeToggle />
+
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative p-1.5 lg:p-2 text-gray-500 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 lg:-top-1 lg:-right-1 min-w-4.5 h-4.5 lg:min-w-5 lg:h-5 bg-red-500 text-white text-[10px] lg:text-xs font-bold rounded-full flex items-center justify-center px-1">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div className="absolute top-full right-0 mt-2 w-80 lg:w-96 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 max-h-[70vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                <h3 className="text-sm font-bold text-gray-800 dark:text-white">
+                  Notifications
+                </h3>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllAsRead}
+                      className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto flex-1 no-scrollbar">
+                {notifications.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      No notifications yet
+                    </p>
+                  </div>
+                ) : (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`px-4 py-3 border-b border-gray-50 dark:border-gray-700 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                        notif.read
+                          ? "bg-white dark:bg-gray-800"
+                          : "bg-purple-50/90 dark:bg-purple-900/40"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="shrink-0 mt-0.5">
+                          {notif.type === "status_update" ? (
+                            <RefreshCw className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                          ) : (
+                            <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`text-xs leading-relaxed ${
+                              notif.read
+                                ? "text-gray-600 dark:text-gray-200"
+                                : "text-gray-800 dark:text-white font-medium"
+                            }`}
+                          >
+                            {notif.message}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {!notif.read && (
+                              <span className="w-1.5 h-1.5 bg-purple-500 rounded-full shrink-0"></span>
+                            )}
+                            <span className="text-[10px] text-gray-400">
+                              {formatTimestamp(notif.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 lg:gap-3">
             <div className="w-8 h-8 lg:w-10 lg:h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs lg:text-sm">
               {currentUser.name

@@ -2,15 +2,14 @@ import { useNavigate } from "react-router-dom";
 import { useUser } from "../hooks/UserContext.jsx";
 import {
   LayoutDashboard,
-  Users,
-  ClipboardList,
   CalendarPlus,
   FileText,
-  BarChart3,
   Settings,
   LogOut,
   Anchor,
   X,
+  User,
+  History, // ✅ Added History icon
 } from "lucide-react";
 
 function ExecutiveOfficerSidebar({ activeTab, onTabChange, isOpen, onClose }) {
@@ -18,10 +17,12 @@ function ExecutiveOfficerSidebar({ activeTab, onTabChange, isOpen, onClose }) {
   const { logout, currentUser } = useUser();
 
   const sidebarItems = [
-    { key: "dashboard", label: "Dashboard",      icon: LayoutDashboard },
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { key: "apply-leave", label: "Apply for Leave", icon: CalendarPlus },
-    { key: "my-leaves", label: "My Leave Applications", icon: FileText },
-    { key: "settings",  label: "Settings",       icon: Settings        },
+    { key: "my-leaves", label: "My Leave History", icon: FileText },
+    { key: "leave-history", label: "Leave Requests", icon: History }, // ✅ New Tab
+    { key: "profile", label: "My Profile", icon: User },
+    { key: "settings", label: "Settings", icon: Settings },
   ];
 
   const handleLogout = () => {
