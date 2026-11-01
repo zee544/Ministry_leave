@@ -139,4 +139,20 @@ describe('leave notification email links', () => {
       `${productionBaseUrl}/userdashboard?tab=actingapprovals`
     );
   });
+
+  it('resolves an acting officer email by account ID instead of duplicate display names', async () => {
+    pool.query.mockResolvedValue([[{ email: 'selected.officer@example.test' }], []]);
+
+    await leaveEmails.sendActingOfficerAssignedEmail(
+      { ...leave, actingOfficerUserId: 99, actingOfficerRole: 'employee' },
+      'Example Officer',
+      { id: 99, role: 'employee' }
+    );
+
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM employees WHERE id = ?'),
+      [99]
+    );
+    expect(sendMail.mock.calls[0][0].to).toBe('selected.officer@example.test');
+  });
 });

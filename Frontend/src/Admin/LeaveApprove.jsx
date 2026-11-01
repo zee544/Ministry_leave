@@ -2,14 +2,12 @@ import { useRef, useState } from "react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
-import { useNotifications } from "../hooks/NotificationContext.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
 
 function LeaveApprove() {
   const { leaves, updateLeaveStatus } = useLeaves();
   const { currentUser } = useUser();
-  const { addNotification } = useNotifications();
   const [selectedLeave, setSelectedLeave] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
@@ -40,29 +38,6 @@ function LeaveApprove() {
       approverRole: "admin",
     });
 
-    const otherApprover = "hod";
-
-    addNotification(
-      `Your ${item.type} leave (${item.from} to ${item.to}) has been APPROVED by Admin.`,
-      "status_update",
-      item.employee,
-      item.division
-    );
-    addNotification(
-      `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been APPROVED by Admin.`,
-      "status_update",
-      otherApprover,
-      item.division
-    );
-
-    if (item.actingOfficer) {
-      addNotification(
-        `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been APPROVED by Admin.`,
-        "status_update",
-        item.actingOfficer,
-        item.division
-      );
-    }
   };
 
   const handleDecline = async (item, reason) => {
@@ -71,28 +46,6 @@ function LeaveApprove() {
       reason: reason || null,
     });
 
-    const reasonText = reason ? ` Reason: ${reason}` : "";
-
-    addNotification(
-      `Your ${item.type} leave (${item.from} to ${item.to}) has been DECLINED by Admin.${reasonText}`,
-      "status_update",
-      item.employee,
-      item.division
-    );
-    if (item.actingOfficer) {
-      addNotification(
-        `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) was DECLINED by Admin.${reasonText}`,
-        "status_update",
-        item.actingOfficer,
-        item.division
-      );
-    }
-    addNotification(
-      `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) was DECLINED by Admin.${reasonText}`,
-      "status_update",
-      "hod",
-      item.division
-    );
   };
 
   const processAction = async (reason) => {

@@ -5,7 +5,7 @@ import {
   ClipboardList,
   CalendarPlus,
   FileText,
-  BarChart3,
+  UserCheck,
   Settings,
   LogOut,
   Anchor,
@@ -19,6 +19,7 @@ function SecretarySidebar({ activeTab, onTabChange, isOpen, onClose }) {
   const sidebarItems = [
     { key: "dashboard",   label: "Dashboard",          icon: LayoutDashboard },
     { key: "pending",     label: "Pending Approvals",  icon: FileText        },
+    { key: "acting-approvals", label: "Acting Approvals", icon: UserCheck },
     { key: "apply-leave", label: "Apply for Leave",    icon: CalendarPlus    },
     { key: "my-leaves",   label: "My Leaves",          icon: ClipboardList   },
     { key: "settings",    label: "Settings",           icon: Settings        },

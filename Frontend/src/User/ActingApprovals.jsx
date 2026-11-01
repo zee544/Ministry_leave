@@ -43,7 +43,12 @@ function ActingApprovals() {
         return () => window.removeEventListener("leaves:acting-refresh", refreshAssignments);
     }, [fetchActingOfficerLeaves]);
 
-    const myAssignments = getLeavesByActingOfficer(currentUser.name, currentUser.division, currentUser.role);
+    const myAssignments = getLeavesByActingOfficer(
+        currentUser.name,
+        currentUser.division,
+        currentUser.role,
+        currentUser.id
+    );
 
     const pendingConfirmations = myAssignments.filter(
         (l) => l.status === "Pending Acting Officer"

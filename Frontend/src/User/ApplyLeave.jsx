@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import { calculateWorkingDays, yearsInRange } from "../utils/leaveDays.js";
@@ -6,8 +6,12 @@ import { apiUrl } from "../api.js";
 
 function ApplyLeave() {
     const { addLeave } = useLeaves();
-    const { currentUser, employees, fetchEmployees } = useUser();
+    const { currentUser } = useUser();
+    const actingUserId = currentUser?.id;
+    const actingUserRole = currentUser?.role;
+    const actingUserDivision = currentUser?.division;
     const isAdmin = currentUser?.role === "admin";
+    const isSenior = ["admin", "hod", "secretary", "executive_officer"].includes(currentUser?.role);
     
     const [formData, setFormData] = useState({
         leaveType: "",
@@ -20,35 +24,16 @@ function ApplyLeave() {
         additionalInfo: "",
     });
     const [showSuccess, setShowSuccess] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [actingOfficers, setActingOfficers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [holidayCache, setHolidayCache] = useState({});
+    const holidayCacheRef = useRef(new Map());
+    const holidayRequestsRef = useRef(new Map());
 
-     useEffect(() => {
-        const loadEmployees = async () => {
-            // ✅ Allow employees, executive officers, HODs, admins, and secretary to fetch colleagues
-            if (!currentUser) {
-                setLoading(false);
-                return;
-            }
-            setLoading(true);
-            try {
-                const token = localStorage.getItem("token");
-                if (token && fetchEmployees) {
-                    await fetchEmployees(token);
-                }
-            } catch (err) {
-                console.warn("Error fetching employees:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        loadEmployees();
-    }, [currentUser?.role]);
-
-    const fetchHolidaysForYear = async (year) => {
-        if (holidayCache[year]) return holidayCache[year];
+    const loadHolidaysForYear = useCallback(async (year) => {
+        if (holidayCacheRef.current.has(year)) return holidayCacheRef.current.get(year);
 
         try {
             const token = localStorage.getItem("token");
@@ -61,6 +46,7 @@ function ApplyLeave() {
             if (res.ok) {
                 const data = await res.json();
                 const dates = data.holidays || [];
+                holidayCacheRef.current.set(year, dates);
                 setHolidayCache((prev) => ({ ...prev, [year]: dates }));
                 return dates;
             }
@@ -68,35 +54,57 @@ function ApplyLeave() {
             console.warn(`Failed to load holidays for ${year}:`, err);
         }
         return null;
-    };
+    }, []);
+
+    const fetchHolidaysForYear = useCallback((year) => {
+        if (holidayCacheRef.current.has(year)) {
+            return Promise.resolve(holidayCacheRef.current.get(year));
+        }
+        if (holidayRequestsRef.current.has(year)) {
+            return holidayRequestsRef.current.get(year);
+        }
+
+        const request = loadHolidaysForYear(year).finally(() => {
+            holidayRequestsRef.current.delete(year);
+        });
+        holidayRequestsRef.current.set(year, request);
+        return request;
+    }, [loadHolidaysForYear]);
 
     useEffect(() => {
         const now = new Date().getFullYear();
         fetchHolidaysForYear(now);
         fetchHolidaysForYear(now + 1);
-    }, []);
+    }, [fetchHolidaysForYear]);
 
     useEffect(() => {
         const { fromDate, toDate } = formData;
         if (!fromDate || !toDate) return;
         yearsInRange(fromDate, toDate).forEach((y) => fetchHolidaysForYear(y));
-    }, [formData.fromDate, formData.toDate]);
+    }, [formData.fromDate, formData.toDate, fetchHolidaysForYear]);
 
     useEffect(() => {
-        if (!currentUser) {
+        if (actingUserId == null) {
             setActingOfficers([]);
+            setLoading(false);
             return;
         }
         const token = localStorage.getItem("token");
+        setLoading(true);
         fetch(apiUrl("/api/admin/employees/acting-officers"), {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then((res) => res.ok ? res.json() : [])
             .then((rows) => setActingOfficers(rows.filter((officer) =>
-                !(officer.role === currentUser.role && Number(officer.id) === Number(currentUser.id))
+                !(officer.role === actingUserRole && Number(officer.id) === Number(actingUserId)) &&
+                (!isAdmin || officer.role === "employee")
             )))
-            .catch(() => setActingOfficers([]));
-    }, [employees, currentUser]);
+            .catch((error) => {
+                console.warn("Failed to load Acting Officers:", error);
+                setActingOfficers([]);
+            })
+            .finally(() => setLoading(false));
+    }, [actingUserId, actingUserRole, actingUserDivision, isAdmin]);
     const getAllHolidaysForRange = (from, to) => {
         const years = yearsInRange(from, to);
         const merged = new Set();
@@ -150,7 +158,6 @@ function ApplyLeave() {
         }
 
         // ✅ 2. Enforce Acting Officer only for regular employees
-        const isSenior = ["admin", "hod", "secretary", "executive_officer"].includes(currentUser?.role);
         if (!isSenior && !formData.actingOfficer) {
             alert("Please select an Acting Officer.");
             return;
@@ -159,7 +166,10 @@ function ApplyLeave() {
         setIsSubmitting(true);
 
         try {
-            const hasActingOfficer = Boolean(formData.actingOfficer?.trim());
+            const selectedActingOfficer = actingOfficers.find(
+                (officer) => `${officer.role}:${officer.id}` === formData.actingOfficer
+            );
+            const hasActingOfficer = Boolean(selectedActingOfficer);
 
             const leaveData = {
                 employee: currentUser.name,
@@ -170,7 +180,9 @@ function ApplyLeave() {
                 noOfDays: formData.noOfDays,
                 days: formData.noOfDays,
                 appliedBy: currentUser.name,
-                actingOfficer: hasActingOfficer ? formData.actingOfficer : null,
+                actingOfficer: selectedActingOfficer?.name || null,
+                actingOfficerUserId: selectedActingOfficer?.id || null,
+                actingOfficerRole: selectedActingOfficer?.role || null,
                 applicantUserId: currentUser.id,
                 applicantRole: currentUser.role,
                 applicantEmail: currentUser.email,
@@ -185,6 +197,9 @@ function ApplyLeave() {
             const savedLeave = await addLeave(leaveData);
             console.log("Leave submitted successfully:", savedLeave);
 
+            setSuccessMessage(hasActingOfficer
+                ? "Your request has been sent to the selected Acting Officer."
+                : "Your request has been sent to the next approver in your workflow.");
             setShowSuccess(true);
             setTimeout(() => setShowSuccess(false), 5000);
 
@@ -230,11 +245,7 @@ function ApplyLeave() {
                             Leave Application Submitted!
                         </p>
                         <p className="text-[10px] sm:text-xs text-green-600 dark:text-green-400">
-                            {isAdmin
-                                ? "Your request has been forwarded directly to your division HOD."
-                                : formData.actingOfficer
-                                    ? "Your request has been forwarded to your acting officer."
-                                    : "Your request has been forwarded directly to your Admin."}
+                            {successMessage}
                         </p>
                     </div>
                 </div>
@@ -314,24 +325,28 @@ function ApplyLeave() {
                     </div>
 
                                       {/* ✅ 3. Acting Officer field — required for employees and EOs */}
-                    {currentUser.role !== "admin" && (
+                    {["employee", "admin", "hod", "secretary", "executive_officer"].includes(currentUser.role) && (
                         <div className="col-span-1 sm:col-span-2">
-                            <label className={labelClass}>Acting Officer *</label>
+                            <label className={labelClass}>
+                                Acting Officer{isSenior ? "" : " *"}
+                            </label>
                             <select
                                 name="actingOfficer"
                                 value={formData.actingOfficer}
                                 onChange={handleChange}
                                 className={inputBaseClass}
-                                required
+                                required={!isSenior}
                             >
-                                <option value="">Select an Acting Officer (Required)</option>
+                                <option value="">
+                                    {isSenior ? "Select an Acting Officer (Optional)" : "Select an Acting Officer (Required)"}
+                                </option>
                                 {/* ... rest of the options ... */}{loading ? (
                                     <option disabled>Loading officers...</option>
                                 ) : actingOfficers.length === 0 ? (
                                     <option disabled>No officers available in your division</option>
                                 ) : (
                                     actingOfficers.map((officer) => (
-                                        <option key={officer.id} value={officer.name}>
+                                        <option key={`${officer.role}:${officer.id}`} value={`${officer.role}:${officer.id}`}>
                                             {officer.name} — {officer.designation || "Officer"}
                                         </option>
                                     ))
@@ -342,7 +357,11 @@ function ApplyLeave() {
                                     ? "Loading..."
                                     : actingOfficers.length === 0
                                         ? "No active officers in your division. Please contact your administrator."
-                                        : "You must select an acting officer to handle your duties while on leave."}
+                                        : isAdmin
+                                            ? "Choose an active employee in your division to act for you during your leave."
+                                            : isSenior
+                                                ? "Optionally choose an Acting Officer from your division."
+                                                : "Select an Acting Officer to handle your duties while on leave."}
                             </p>
                         </div>
                     )}

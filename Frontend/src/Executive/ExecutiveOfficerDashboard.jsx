@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import ExecutiveOfficerHeader from "../Components/ExecutiveOfficerHeader";
 import ExecutiveOfficerSidebar from "../Components/ExecutiveOfficerSidebar";
@@ -26,7 +26,7 @@ function ExecutiveOfficerDashboard() {
   };
 
   const { addNotification } = useNotifications();
-  const { leaves, fetchLeaves } = useLeaves();
+  const { leaves } = useLeaves();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -41,10 +41,6 @@ function ExecutiveOfficerDashboard() {
   });
   const [selectedLeave, setSelectedLeave] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
-
-  useEffect(() => {
-    if (fetchLeaves) fetchLeaves();
-  }, [activeTab, fetchLeaves]);
 
   // 1. Leaves waiting for EO review — status "Pending" for EO's division
   const pendingLeaves = leaves.filter(

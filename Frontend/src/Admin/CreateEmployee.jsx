@@ -25,20 +25,28 @@ const Field = ({ label, htmlFor, error, hint, showCheck, isValid, children }) =>
     </div>
 );
 
-function CreateEmployee({ onCancel }) {
+function CreateEmployee({
+    onCancel,
+    onCreateEmployee,
+    fixedDivision = "",
+    generateTemporaryPassword = false,
+    requireDesignation = false,
+    requireAppointmentDate = false,
+}) {
     const { addEmployee, currentUser } = useUser();
     const [formdata, setformdata] = useState({
         name: '',
         designation: '',
-        division: currentUser?.division || '',
+        division: fixedDivision || currentUser?.division || '',
         email: '',
         appointment_date: '',
-        password: 'Ministry@123',
+        password: generateTemporaryPassword ? '' : 'Ministry@123',
     });
     const [errors, seterrors] = useState({});
     const [isSubmitting, setisSubmitting] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [submitError, setSubmitError] = useState('');
+    const [createdTemporaryPassword, setCreatedTemporaryPassword] = useState('');
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -56,7 +64,11 @@ const validateForm = () => {
         tempErrors.name = "Name is required";
     }
 
-    if (!formdata.division) {
+    if (requireDesignation && !formdata.designation.trim()) {
+        tempErrors.designation = "Designation is required";
+    }
+
+    if (!fixedDivision && !formdata.division) {
         tempErrors.division = "Division is required";
     }
 
@@ -66,11 +78,13 @@ const validateForm = () => {
         tempErrors.email = "Enter a valid email address";
     }
 
-    if (!formdata.password || formdata.password.length < 6) {
+    if (!generateTemporaryPassword && (!formdata.password || formdata.password.length < 6)) {
         tempErrors.password = "Password must be at least 6 characters";
     }
 
-  
+    if (requireAppointmentDate && !formdata.appointment_date) {
+        tempErrors.appointment_date = "Date of first appointment is required";
+    }
 
     seterrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
@@ -80,33 +94,36 @@ const validateForm = () => {
 const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError('');
+    setCreatedTemporaryPassword('');
 
     if (!validateForm()) return;
 
     setisSubmitting(true);
 
     try {
-        if (!addEmployee) {
+        if (!onCreateEmployee && !addEmployee) {
             throw new Error('Employee creation function is unavailable.');
         }
 
-        await addEmployee({
+        const result = await (onCreateEmployee || addEmployee)({
             ...formdata,
+            division: fixedDivision || formdata.division,
             name: formdata.name.trim(),
-            email: formdata.email.trim(),
+            email: formdata.email.trim().toLowerCase(),
             designation: formdata.designation.trim() || null,
             appointment_date: formdata.appointment_date || null
         });
+        setCreatedTemporaryPassword(result?.temporaryPassword || '');
 
         setShowSuccess(true);
 
         setformdata({
             name: '',
             designation: '',
-            division: currentUser?.division || '',
+            division: fixedDivision || currentUser?.division || '',
             email: '',
             appointment_date: '',
-            password: 'Ministry@123'
+            password: generateTemporaryPassword ? '' : 'Ministry@123'
         });
 
         seterrors({});
@@ -127,7 +144,7 @@ const handleSubmit = async (e) => {
         const value = formdata[field];
         if (!value) return false;
         if (field === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-        if (field === 'password') return value.length >= 6;
+        if (field === 'password') return generateTemporaryPassword || value.length >= 6;
         return true;
     };
 
@@ -175,8 +192,16 @@ const handleSubmit = async (e) => {
                             Registration Successful!
                         </h3>
                         <p className="mt-1.5 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                            New employee has been added to the system successfully.
+                            {generateTemporaryPassword
+                                ? "The employee account was created in your division."
+                                : "New employee has been added to the system successfully."}
                         </p>
+                        {createdTemporaryPassword && (
+                            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+                                Share this temporary password securely:{" "}
+                                <strong className="select-all">{createdTemporaryPassword}</strong>
+                            </p>
+                        )}
 
                         <button
                             type="button"
@@ -200,6 +225,12 @@ const handleSubmit = async (e) => {
                     Add a new employee to the system.
                 </p>
             </div>
+
+            {submitError && (
+                <p role="alert" className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                    {submitError}
+                </p>
+            )}
 
             <form
                 onSubmit={handleSubmit}
@@ -227,7 +258,7 @@ const handleSubmit = async (e) => {
                     </Field>
 
                     
-<Field label="Designation (Optional)" htmlFor="designation">
+<Field label={requireDesignation ? "Designation" : "Designation (Optional)"} htmlFor="designation" error={errors.designation}>
     <input
         id="designation"
         name="designation"
@@ -236,6 +267,7 @@ const handleSubmit = async (e) => {
         onChange={handleChange}
         placeholder="e.g. Senior Officer"
         autoComplete="off"
+        required={requireDesignation}
         className={inputBase + " " + inputState("designation")}
     />
 </Field>
@@ -247,10 +279,11 @@ const handleSubmit = async (e) => {
                             name="division"
                             value={formdata.division}
                             onChange={handleChange}
+                            disabled={Boolean(fixedDivision)}
                             className={`${inputBase} ${inputState("division")}`}
                         >
                             <option value="">Select division</option>
-                            {MINISTRY_DIVISIONS.map((d) => (
+                            {(fixedDivision ? [fixedDivision] : MINISTRY_DIVISIONS).map((d) => (
                                 <option key={d} value={d}>{d}</option>
                             ))}
                         </select>
@@ -258,8 +291,9 @@ const handleSubmit = async (e) => {
 
                   
 <Field
-    label="Date of First Appointment (Optional)"
+    label={`Date of First Appointment${requireAppointmentDate ? "" : " (Optional)"}`}
     htmlFor="appointment_date"
+    error={errors.appointment_date}
 >
     <input
         id="appointment_date"
@@ -267,6 +301,7 @@ const handleSubmit = async (e) => {
         type="date"
         value={formdata.appointment_date}
         onChange={handleChange}
+        required={requireAppointmentDate}
         className={`${inputBase} ${inputState("appointment_date")} dark:[color-scheme:dark]`}
     />
 </Field>
@@ -292,27 +327,38 @@ const handleSubmit = async (e) => {
                     </Field>
 
                     <Field
-                        label="Initial Password"
+                        label={generateTemporaryPassword ? "Temporary Password" : "Initial Password"}
                         htmlFor="password"
                         error={errors.password}
-                        showCheck
+                        showCheck={!generateTemporaryPassword}
                         isValid={isFieldValid("password")}
-                        hint={<>Default: <span className="font-medium text-gray-700 dark:text-gray-300">Ministry@123</span> — you may set a custom password.</>}
+                        hint={generateTemporaryPassword
+                            ? "A secure temporary password will be generated after the account is created."
+                            : <>Default: <span className="font-medium text-gray-700 dark:text-gray-300">Ministry@123</span> — you may set a custom password.</>}
                     >
                         <input
                             id="password"
                             name="password"
-                            type="password"
-                            value={formdata.password}
-                            onChange={handleChange}
-                            autoComplete="new-password"
-                            className={`${inputBase} ${inputState("password")} ${isFieldValid("password") ? "pr-10" : ""}`}
+                            type={generateTemporaryPassword ? "text" : "password"}
+                            value={generateTemporaryPassword ? "Generated after account creation" : formdata.password}
+                            onChange={generateTemporaryPassword ? undefined : handleChange}
+                            readOnly={generateTemporaryPassword}
+                            autoComplete={generateTemporaryPassword ? "off" : "new-password"}
+                            className={`${inputBase} ${inputState("password")} ${isFieldValid("password") && !generateTemporaryPassword ? "pr-10" : ""} ${generateTemporaryPassword ? "cursor-not-allowed opacity-70" : ""}`}
                         />
                     </Field>
                 </div>
 
                 <div className="mt-8 flex items-center justify-end gap-3 border-t border-gray-200 pt-5 dark:border-gray-800">
-                    
+                    {onCancel && (
+                        <button
+                            type="button"
+                            onClick={onCancel}
+                            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                            Cancel
+                        </button>
+                    )}
                     <button
                         type="submit"
                         disabled={isSubmitting}

@@ -29,13 +29,11 @@ function UserDashboard() {
     }
   };
 
-  const { getNotificationsForRole, markAsRead, addNotification } =
-    useNotifications();
+  const { getNotificationsForRole, markAsRead } = useNotifications();
   const {
     leaves,
     getLeavesByActingOfficer,
     confirmActingOfficer,
-    fetchLeaves,
     fetchActingOfficerLeaves,
   } = useLeaves();
 
@@ -53,19 +51,22 @@ function UserDashboard() {
   });
 
   useEffect(() => {
-    const loadLeaves = async () => {
-      if (fetchLeaves) await fetchLeaves();
-      if (fetchActingOfficerLeaves) await fetchActingOfficerLeaves();
-    };
-    loadLeaves();
-  }, [activeTab, fetchLeaves, fetchActingOfficerLeaves]);
+    fetchActingOfficerLeaves();
+  }, [fetchActingOfficerLeaves]);
 
   const actingOfficerNotifs = getNotificationsForRole(
     "employee",
-    currentUser.name
+    currentUser.name,
+    currentUser.division,
+    currentUser.id
   ).filter((n) => n.type === "acting_officer" && !n.read);
 
-  const myAssignments = getLeavesByActingOfficer(currentUser.name);
+  const myAssignments = getLeavesByActingOfficer(
+    currentUser.name,
+    currentUser.division,
+    currentUser.role,
+    currentUser.id
+  );
   const pendingConfirmations = myAssignments.filter(
     (l) => l.status === "Pending Acting Officer"
   );
@@ -84,29 +85,7 @@ function UserDashboard() {
     try {
       await confirmActingOfficer(leave.id, "confirm");
 
-      addNotification(
-        `Leave application: ${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by the Acting Officer (${currentUser.name}) and is now awaiting your approval.`,
-        "leave_application",
-        "admin",
-        leave.division,
-        "/Admindashboard?tab=leaves"
-      );
-      addNotification(
-        `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by your Acting Officer (${currentUser.name}) and forwarded to the Admin for approval.`,
-        "status_update",
-        leave.employee,
-        leave.division,
-        "/userdashboard?tab=myleaves"
-      );
-      addNotification(
-        `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by Acting Officer (${currentUser.name}) and is now awaiting Admin approval.`,
-        "leave_application",
-        "hod",
-        leave.division,
-        "/hoddashboard?tab=leaves"
-      );
-
-      setToast(`Confirmed ${leave.employee}'s leave. Sent to admin.`);
+      setToast(`Confirmed ${leave.employee}'s leave and sent it to the configured approver.`);
       setTimeout(() => setToast(""), 4000);
 
     } catch (error) {
@@ -124,32 +103,6 @@ function UserDashboard() {
 
     try {
       await confirmActingOfficer(leave.id, "decline", reason);
-
-      const reasonText = reason ? ` Reason: ${reason}` : "";
-
-      addNotification(
-        `Your ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by your Acting Officer (${currentUser.name}).${reasonText}`,
-        "status_update",
-        leave.employee,
-        leave.division,
-        "/userdashboard?tab=myleaves"
-      );
-
-      addNotification(
-        `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by Acting Officer (${currentUser.name}).${reasonText}`,
-        "leave_application",
-        "admin",
-        leave.division,
-        "/Admindashboard?tab=leaves"
-      );
-
-      addNotification(
-        `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by Acting Officer (${currentUser.name}).${reasonText}`,
-        "leave_application",
-        "hod",
-        leave.division,
-        "/hoddashboard?tab=leaves"
-      );
 
       setToast(`❌ Declined ${leave.employee}'s leave.`);
       setTimeout(() => setToast(""), 4000);
@@ -782,7 +735,7 @@ function UserDashboard() {
                   ) : (
                     <DataTable
                       columns={actingDashboardColumns}
-                      data={pendingConfirmations.slice(0, 5)}
+                      data={pendingConfirmations}
                       mobileRender={actingDashboardMobileRender}
                       options={{
                         searchable: false,

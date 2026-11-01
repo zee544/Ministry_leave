@@ -21,6 +21,8 @@ import ConfirmModal from "../Components/ConfirmModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
 import ActingApprovals from "../User/ActingApprovals.jsx";
+import ActingQuickAccess from "../User/ActingQuickAccess.jsx";
+import HODEmployees from "./HODEmployees.jsx";
 
 
 function HODDashboard() {
@@ -628,6 +630,8 @@ function HODDashboard() {
                 </div>
               </div>
 
+              <ActingQuickAccess onReview={() => setActiveTab("acting-approvals")} />
+
               {pendingHODApproval.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-purple-200 dark:border-purple-800 overflow-hidden mb-6 lg:mb-8">
                   <div className="p-4 lg:p-6 border-b border-purple-100 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/20">
@@ -791,6 +795,12 @@ function HODDashboard() {
           {activeTab === "my-leaves" && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
               <Myleaves />
+            </div>
+          )}
+
+          {activeTab === "employees" && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
+              <HODEmployees />
             </div>
           )}
 

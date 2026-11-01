@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import ThemeToggle from "./ThemeToggle";
-import {Bell, Megaphone, FileText,RefreshCw } from "lucide-react"
+import {Bell, Megaphone, FileText, RefreshCw, User } from "lucide-react"
 
 function Header({ activeTab, onMenuToggle }) {
     const { currentUser } = useUser();
@@ -12,7 +12,6 @@ function Header({ activeTab, onMenuToggle }) {
     const { 
         getNotificationsForRole, 
         unreadCountForRole, 
-        markAsRead, 
         markAllAsRead,
         markAndNavigate,   
     } = useNotifications();
@@ -22,8 +21,8 @@ function Header({ activeTab, onMenuToggle }) {
     
     const userDivision = currentUser?.division || "Administration";
     
-    const adminNotifications = getNotificationsForRole("admin", null, userDivision);
-    const unreadCount = unreadCountForRole("admin", null, userDivision);
+    const adminNotifications = getNotificationsForRole("admin", currentUser?.name, userDivision, currentUser?.id);
+    const unreadCount = unreadCountForRole("admin", currentUser?.name, userDivision, currentUser?.id);
 
     useEffect(() => {
         function handleClickOutside(event) {

@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS `leaves` (
   `to_date` DATE NOT NULL,
   `no_of_days` DECIMAL(4, 1) NOT NULL,
   `acting_officer` VARCHAR(100),
+  `acting_officer_user_id` INT DEFAULT NULL,
+  `acting_officer_role` VARCHAR(50) DEFAULT NULL,
   `applicant_user_id` INT DEFAULT NULL,
   `applicant_role` VARCHAR(20) DEFAULT NULL,
   `status` VARCHAR(50) DEFAULT 'Pending',
@@ -178,6 +180,7 @@ CREATE TABLE IF NOT EXISTS `leaves` (
   INDEX `idx_leave_status` (`status`),
   INDEX `idx_leave_applied_on` (`applied_on`),
   INDEX `idx_leave_applicant` (`applicant_user_id`, `applicant_role`),
+  INDEX `idx_leave_acting_identity` (`acting_officer_role`, `acting_officer_user_id`, `status`, `applied_on`),
   INDEX `idx_leave_target_approver` (`target_approver_role`, `target_approver_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -214,11 +217,14 @@ CREATE TABLE IF NOT EXISTS `notifications` (
   `message` TEXT NOT NULL,
   `type` VARCHAR(50) NOT NULL,
   `recipient` VARCHAR(100) NOT NULL,
+  `recipient_role` VARCHAR(50) DEFAULT NULL,
+  `recipient_user_id` INT DEFAULT NULL,
   `division` VARCHAR(100),
   `link` VARCHAR(255),
   `read_status` BOOLEAN NOT NULL DEFAULT FALSE,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_notification_recipient_created` (`recipient`, `created_at`),
+  INDEX `idx_notification_recipient_identity` (`recipient_role`, `recipient_user_id`, `created_at`),
   INDEX `idx_notification_division_created` (`division`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

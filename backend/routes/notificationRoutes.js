@@ -4,59 +4,46 @@ const pool = require('../config/db');
 const { verifyToken } = require('../middleware/auth');
 const { broadcastNotification } = require('./notificationsStream');
 
+function getNotificationScope(user) {
+  const role = user.role;
+  const roleRecipient = role === 'admin' || role === 'hod' ? ` OR recipient = '${role}'` : '';
+  const recipientClause = `((
+    recipient_role = ? AND recipient_user_id = ?
+  ) OR (
+    recipient_role IS NULL AND (LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))${roleRecipient})
+  ))`;
+  const divisionClause = role === 'hod'
+    ? 'LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))'
+    : role === 'secretary'
+      ? '1 = 1'
+      : '(LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)';
+
+  return {
+    clause: `${recipientClause} AND ${divisionClause}`,
+    params: role === 'secretary'
+      ? [role, user.id, user.name]
+      : [role, user.id, user.name, user.division || ''],
+  };
+}
+
 /**
  * @route   GET /api/notifications
  * @desc    Get notifications for current user (role-aware)
  * @access  Private
  */
 router.get('/', verifyToken, async (req, res) => {
-  const role = req.user.role;
-  const userName = req.user.name;
-  const userDivision = req.user.division;
-
   try {
-    let query = '';
-    let params = [];
-
-    if (role === 'admin') {
-      query = `
-        SELECT id, message, type, recipient, division, link,
-          read_status as \`read\`,
-          created_at as timestamp
-        FROM notifications
-        WHERE (recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
-          AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)
-        ORDER BY created_at DESC
-        LIMIT 100
-      `;
-      params = [userName, userDivision];
-    } else if (role === 'hod') {
-      // Scope HOD notifications strictly to their division — no NULL/global bleed across HODs
-      query = `
-        SELECT id, message, type, recipient, division, link,
-          read_status as \`read\`,
-          created_at as timestamp
-        FROM notifications
-        WHERE (recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
-          AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))
-        ORDER BY created_at DESC
-        LIMIT 100
-      `;
-      params = [userName, userDivision];
-    } else {
-      query = `
-        SELECT id, message, type, recipient, division, link,
-          read_status as \`read\`,
-          created_at as timestamp
-        FROM notifications
-        WHERE recipient = ?
-        ORDER BY created_at DESC
-        LIMIT 100
-      `;
-      params = [userName];
-    }
-
-    const [rows] = await pool.query(query, params);
+    const scope = getNotificationScope(req.user);
+    const [rows] = await pool.query(
+      `SELECT id, message, type, recipient, recipient_role AS recipientRole,
+        recipient_user_id AS recipientUserId, division, link,
+        read_status as \`read\`, created_at as timestamp
+       FROM notifications
+       WHERE ${scope.clause}
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      scope.params
+    );
 
     const mapped = rows.map((n) => ({
       ...n,
@@ -90,7 +77,9 @@ router.post('/', verifyToken, async (req, res) => {
     );
 
     const [newNotif] = await pool.query(
-      `SELECT id, message, type, recipient, division, link, read_status as \`read\`, created_at as timestamp
+      `SELECT id, message, type, recipient, recipient_role AS recipientRole,
+        recipient_user_id AS recipientUserId, division, link,
+        read_status as \`read\`, created_at as timestamp
        FROM notifications WHERE id = ?`,
       [result.insertId]
     );
@@ -116,29 +105,13 @@ router.post('/', verifyToken, async (req, res) => {
  */
 router.patch('/:id/read', verifyToken, async (req, res) => {
   const notifId = req.params.id;
-  const role = req.user.role;
-  const userName = req.user.name;
-  const userDivision = req.user.division;
-
   try {
-    let ownershipQuery;
-    let ownershipParams;
-
-    if (role === 'admin') {
-      ownershipQuery = `(recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))) AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
-      ownershipParams = [userName, userDivision];
-    } else if (role === 'hod') {
-      ownershipQuery = `(recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))) AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
-      ownershipParams = [userName, userDivision];
-    } else {
-      ownershipQuery = `recipient = ?`;
-      ownershipParams = [userName];
-    }
+    const scope = getNotificationScope(req.user);
 
     const [result] = await pool.query(
       `UPDATE notifications SET read_status = 1 
-       WHERE id = ? AND ${ownershipQuery}`,
-      [notifId, ...ownershipParams]
+       WHERE id = ? AND ${scope.clause}`,
+      [notifId, ...scope.params]
     );
 
     if (result.affectedRows === 0) {
@@ -158,30 +131,12 @@ router.patch('/:id/read', verifyToken, async (req, res) => {
  * @access  Private
  */
 router.patch('/read-all', verifyToken, async (req, res) => {
-  const role = req.user.role;
-  const userName = req.user.name;
-  const userDivision = req.user.division;
-
   try {
-    let query = '';
-    let params = [];
-
-    if (role === 'admin') {
-      query = `UPDATE notifications SET read_status = 1 
-               WHERE (recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
-                 AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
-      params = [userName, userDivision];
-    } else if (role === 'hod') {
-      query = `UPDATE notifications SET read_status = 1 
-               WHERE (recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
-                 AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
-      params = [userName, userDivision];
-    } else {
-      query = `UPDATE notifications SET read_status = 1 WHERE recipient = ?`;
-      params = [userName];
-    }
-
-    await pool.query(query, params);
+    const scope = getNotificationScope(req.user);
+    await pool.query(
+      `UPDATE notifications SET read_status = 1 WHERE ${scope.clause}`,
+      scope.params
+    );
 
     return res.status(200).json({ message: 'All marked as read.' });
   } catch (error) {

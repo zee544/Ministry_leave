@@ -103,7 +103,7 @@ describe('employee creation endpoint', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(response.body.message).toBe('Name, designation, and email are required.');
+    expect(response.body.message).toBe('Name, division, and email are required.');
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -139,5 +139,53 @@ describe('employee creation endpoint', () => {
     ]);
     await expect(bcrypt.compare('SecureTestPass123', insertValues[4])).resolves.toBe(true);
     expect(insertValues[5]).toBe('2026-10-12');
+  });
+
+  it('lets HODs create employees only in their assigned division with a temporary password', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
+      if (sql.includes('SELECT id FROM')) return [[], []];
+      if (sql.includes('INSERT INTO employees')) return [{ insertId: 326 }, []];
+      return [[], []];
+    });
+
+    const response = await post('/api/admin/hod/employees', {
+      name: 'HOD Employee',
+      designation: 'Officer',
+      email: 'hod.employee@example.test',
+      appointment_date: '2026-10-12',
+      division: 'A different division',
+    }, tokenFor('hod'));
+
+    expect(response.status).toBe(201);
+    expect(response.body.employee).toMatchObject({
+      id: 326,
+      division: 'Accounts',
+      email: 'hod.employee@example.test',
+      status: 'Active',
+    });
+    expect(response.body.temporaryPassword).toHaveLength(16);
+
+    const [insertSql, insertValues] = query.mock.calls.find(
+      ([sql]) => sql.includes('INSERT INTO employees')
+    );
+    expect(insertSql).toContain('must_change_password');
+    expect(insertValues.slice(0, 4)).toEqual([
+      'HOD Employee',
+      'Officer',
+      'Accounts',
+      'hod.employee@example.test',
+    ]);
+    expect(insertValues[5]).toBe('2026-10-12');
+    expect(insertSql).toContain("'Active', 1");
+    await expect(bcrypt.compare(response.body.temporaryPassword, insertValues[4])).resolves.toBe(true);
+  });
+
+  it('does not allow employees to use the HOD employee creation endpoint', async () => {
+    const query = vi.spyOn(pool, 'query');
+    const response = await post('/api/admin/hod/employees', {}, tokenFor('employee'));
+
+    expect(response.status).toBe(403);
+    expect(query).not.toHaveBeenCalled();
   });
 });

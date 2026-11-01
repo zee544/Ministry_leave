@@ -15,64 +15,66 @@ function emailAction(path, label) {
   };
 }
 
-async function findEmployeeEmail(name, division) {
+function actingOfficerApprovalsPath(role) {
+  const paths = {
+    employee: '/userdashboard?tab=actingapprovals',
+    hod: '/hoddashboard?tab=acting-approvals',
+    admin: '/Admindashboard?tab=acting-approvals',
+    secretary: '/secretarydashboard?tab=acting-approvals',
+    executive_officer: '/executiveofficerdashboard?tab=acting-approvals',
+  };
+  return paths[role] || paths.employee;
+}
+
+const profileTableByRole = {
+  employee: 'employees',
+  admin: 'admins',
+  hod: 'hod',
+  secretary: 'secretary',
+  executive_officer: 'executive_officers',
+};
+
+async function findEmployeeEmail(name, division, role = null, userId = null) {
+  const preferredRole = String(role || '').toLowerCase();
+  const preferredTable = profileTableByRole[preferredRole];
+
+  if (preferredTable && userId != null) {
+    const [rows] = await pool.query(
+      `SELECT email FROM ${preferredTable} WHERE id = ? LIMIT 1`,
+      [userId]
+    );
+    return rows[0]?.email || null;
+  }
+
   if (!name) return null;
 
-  const [empRows] = await pool.query(
-    `SELECT email FROM employees 
-     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) 
-     LIMIT 1`,
-    [name]
-  );
-  if (empRows.length > 0 && empRows[0].email) return empRows[0].email;
-
-  const [adminRows] = await pool.query(
-    `SELECT email FROM admins 
-     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) 
-     LIMIT 1`,
-    [name]
-  );
-  if (adminRows.length > 0 && adminRows[0].email) return adminRows[0].email;
-
-  const [hodRows] = await pool.query(
-    `SELECT email FROM hod 
-     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) 
-     LIMIT 1`,
-    [name]
-  );
-  if (hodRows.length > 0 && hodRows[0].email) return hodRows[0].email;
-
-  const [secretaryRows] = await pool.query(
-    `SELECT email FROM secretary
-     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
-     LIMIT 1`,
-    [name]
-  );
-  if (secretaryRows.length > 0 && secretaryRows[0].email) return secretaryRows[0].email;
+  const roleOrder = preferredTable
+    ? [preferredRole]
+    : ['employee', 'admin', 'hod', 'secretary', 'executive_officer'];
+  for (const candidateRole of roleOrder) {
+    const table = profileTableByRole[candidateRole];
+    const divisionFilter = candidateRole === 'secretary'
+      ? ''
+      : 'AND (? IS NULL OR LOWER(TRIM(division)) = LOWER(TRIM(?)))';
+    const params = candidateRole === 'secretary'
+      ? [name]
+      : [name, division || null, division || null];
+    const [rows] = await pool.query(
+      `SELECT email FROM ${table}
+       WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) ${divisionFilter}
+       LIMIT 1`,
+      params
+    );
+    if (rows[0]?.email) return rows[0].email;
+  }
 
   return null;
 }
 
 async function findApplicantEmail(leave) {
-  if (leave?.applicantUserId && leave?.applicantRole) {
-    const tableByRole = {
-      employee: 'employees',
-      hod: 'hod',
-      admin: 'admins',
-      secretary: 'secretary',
-      executive_officer: 'executive_officers',
-    };
-    const table = tableByRole[String(leave.applicantRole).toLowerCase()];
-    if (table) {
-      const [rows] = await pool.query(
-        `SELECT email FROM ${table} WHERE id = ? LIMIT 1`,
-        [leave.applicantUserId]
-      );
-      if (rows[0]?.email) return rows[0].email;
-    }
-  }
-
-  return findEmployeeEmail(leave?.employee, leave?.division);
+  const role = leave?.applicantRole || leave?.applicant_role;
+  const userId = leave?.applicantUserId ?? leave?.applicant_user_id;
+  return findEmployeeEmail(leave?.employee, leave?.division, role, userId);
 }
 
 async function findDivisionAdminEmail(division) {
@@ -162,12 +164,14 @@ async function sendToAdminAndHod({ leave, subject, text, mailHtml, accentAdmin, 
 // ═══════════════════════════════════════════════
 // STAGE 1 — Employee submits leave → notify Acting Officer
 // ═══════════════════════════════════════════════
-async function sendActingOfficerAssignedEmail(leave, actingOfficerName) {
-  const email = await findEmployeeEmail(actingOfficerName, leave.division);
+async function sendActingOfficerAssignedEmail(leave, actingOfficerName, actingUser = null) {
+  const role = actingUser?.role || leave.actingOfficerRole || leave.acting_officer_role;
+  const userId = actingUser?.id || leave.actingOfficerUserId || leave.acting_officer_user_id;
+  const email = actingUser?.email || await findEmployeeEmail(actingOfficerName, leave.division, role, userId);
   if (!email) {
     throw new Error('Acting officer email address was not found.');
   }
-  const action = emailAction('/userdashboard?tab=actingapprovals', 'Open Acting Approvals');
+  const action = emailAction(actingOfficerApprovalsPath(role), 'Open Acting Approvals');
 
   await sendEmail({
     to: email,
@@ -257,6 +261,7 @@ async function sendApprovalRequestEmail({ leave, approverEmail, approverRole }) 
 // STAGE 2a — Acting Officer CONFIRMED → notify BOTH Admin & HOD (parallel)
 // ═══════════════════════════════════════════════
 async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
+  const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
   const mailHtml = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
       <p style="margin-bottom: 10px;">Hello,</p>
@@ -272,14 +277,14 @@ async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
       </table>
       
       <p style="color: #475569; margin-top: 16px;">Please log in. <strong>Whichever of you (Admin or HOD) acts first will finalize the leave.</strong></p>
-      ${emailAction('/Admindashboard?tab=leaves', 'Review Leave Request').html}
+      ${action.html}
     </div>
   `;
 
   await sendToAdminAndHod({
     leave,
     subject: `Leave Awaiting Approval — ${leave.employee}`,
-    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting approval. Sign in to review.`,
+    text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting approval. Sign in to review: ${action.url}`,
     mailHtml,
     accentAdmin: '#2563eb',
     accentHod: '#7c3aed',
@@ -290,7 +295,7 @@ async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
 // STAGE 2b — Acting Officer DECLINED → notify Employee
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName, reason) {
-  const email = await findEmployeeEmail(leave.employee, leave.division);
+  const email = await findApplicantEmail(leave);
   if (!email) throw new Error('Employee email address was not found.');
   const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
@@ -325,7 +330,7 @@ async function sendEmployeeDeclinedByActingOfficerEmail(leave, actingOfficerName
 // STAGE 3b — Admin DECLINED → notify Employee
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
-  const email = await findEmployeeEmail(leave.employee, leave.division);
+  const email = await findApplicantEmail(leave);
   if (!email) throw new Error('Employee email address was not found.');
   const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
@@ -395,9 +400,17 @@ async function sendFinalApprovalEmails(leave) {
   }
 
   if (leave.actingOfficer) {
-    const aoEmail = await findEmployeeEmail(leave.actingOfficer, leave.division);
+    const aoEmail = await findEmployeeEmail(
+      leave.actingOfficer,
+      leave.division,
+      leave.actingOfficerRole || leave.acting_officer_role,
+      leave.actingOfficerUserId ?? leave.acting_officer_user_id
+    );
     if (aoEmail) {
-      const actingOfficerAction = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
+      const actingOfficerAction = emailAction(
+        actingOfficerApprovalsPath(leave.actingOfficerRole || leave.acting_officer_role),
+        'View Acting Assignments'
+      );
       try {
         await sendEmail({
           to: aoEmail,
@@ -455,11 +468,19 @@ async function sendFinalApprovalEmails(leave) {
 // EMPLOYEE CANCELLED → notify Acting Officer
 // ═══════════════════════════════════════════════
 async function sendActingOfficerCancelledEmail(leave, reason) {
-  const email = await findEmployeeEmail(leave.actingOfficer, leave.division);
+  const email = await findEmployeeEmail(
+    leave.actingOfficer,
+    leave.division,
+    leave.actingOfficerRole || leave.acting_officer_role,
+    leave.actingOfficerUserId ?? leave.acting_officer_user_id
+  );
   if (!email) {
     throw new Error('Acting officer email address was not found.');
   }
-  const action = emailAction('/userdashboard?tab=actingapprovals', 'View Acting Assignments');
+  const action = emailAction(
+    actingOfficerApprovalsPath(leave.actingOfficerRole || leave.acting_officer_role),
+    'View Acting Assignments'
+  );
 
   await sendEmail({
     to: email,

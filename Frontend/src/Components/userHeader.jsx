@@ -10,8 +10,8 @@ function UserHeader({ activeTab, onMenuToggle }) {
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef(null);
 
-    const userNotifications = getNotificationsForRole("employee", currentUser.name);
-    const unreadCount = unreadCountForRole("employee", currentUser.name);
+    const userNotifications = getNotificationsForRole("employee", currentUser.name, currentUser.division, currentUser.id);
+    const unreadCount = unreadCountForRole("employee", currentUser.name, currentUser.division, currentUser.id);
 
     useEffect(() => {
         function handleClickOutside(event) {

@@ -28,11 +28,11 @@ import ConfirmModal from "../Components/ConfirmModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
 import ActingApprovals from "../User/ActingApprovals.jsx";
+import ActingQuickAccess from "../User/ActingQuickAccess.jsx";
 
 function AdminDashboard() {
   const { leaves, updateLeaveStatus, fetchLeaves } = useLeaves();
   const { currentUser, employees } = useUser();
-  const { addNotification } = useNotifications();
   const { getNotificationsForRole, markAsRead, fetchNotifications } =
     useNotifications();
 
@@ -59,14 +59,6 @@ function AdminDashboard() {
   });
   const [approvalLoading, setApprovalLoading] = useState(false);
   const approvalInFlight = useRef(false);
-
-  useEffect(() => {
-    const loadData = async () => {
-      if (fetchLeaves) await fetchLeaves();
-      if (fetchNotifications) await fetchNotifications();
-    };
-    loadData();
-  }, [fetchLeaves, fetchNotifications]);
 
   useEffect(() => {
     const handleFocus = () => {
@@ -102,8 +94,9 @@ function AdminDashboard() {
 
   const leaveApplicationNotifs = getNotificationsForRole(
     "admin",
-    null,
-    userDivision
+    currentUser?.name,
+    userDivision,
+    currentUser?.id
   ).filter((n) => n.type === "leave_application" && !n.read);
 
   const pendingLeaves = divisionLeaves.filter(
@@ -152,64 +145,10 @@ function AdminDashboard() {
 
   const handlePreApprove = async (item) => {
     await updateLeaveStatus(item.id, "Admin Approved", { recommendedByAdmin: true });
-
-    addNotification(
-      `Leave application: ${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been pre-approved by Admin and is now awaiting your final approval.`,
-      "leave_application",
-      "hod",
-      item.division,
-      "/hoddashboard?tab=leaves"
-    );
-
-    addNotification(
-      `Your ${item.type} leave (${item.from} to ${item.to}) has been pre-approved by Admin and forwarded to HOD for final approval.`,
-      "status_update",
-      item.employee,
-      item.division,
-      "/userdashboard?tab=myleaves"
-    );
-
-    if (item.actingOfficer) {
-      addNotification(
-        `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) has been pre-approved by Admin and forwarded to HOD for final approval.`,
-        "status_update",
-        item.actingOfficer,
-        item.division,
-        "/userdashboard?tab=actingapprovals"
-      );
-    }
   };
 
   const handleDecline = async (item, reason) => {
     await updateLeaveStatus(item.id, "Declined", { declinedBy: "Admin", reason: reason || null });
-
-    const reasonText = reason ? ` Reason: ${reason}` : "";
-
-    addNotification(
-      `Your ${item.type} leave (${item.from} to ${item.to}) has been DECLINED by Admin.${reasonText}`,
-      "status_update",
-      item.employee,
-      item.division,
-      "/userdashboard?tab=myleaves"
-    );
-
-    if (item.actingOfficer) {
-      addNotification(
-        `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) was DECLINED by Admin.${reasonText}`,
-        "status_update",
-        item.actingOfficer,
-        item.division,
-        "/userdashboard?tab=actingapprovals"
-      );
-    }
-
-    addNotification(
-      `${item.employee}'s ${item.type} leave (${item.from} to ${item.to}) was DECLINED by Admin.${reasonText}`,
-      "leave_application",
-      "hod",
-      item.division,
-      "/hoddashboard?tab=leaves"
-    );
   };
 
   const processAction = async (reason) => {
@@ -599,6 +538,8 @@ function AdminDashboard() {
                   </button>
                 </div>
               </div>
+
+              <ActingQuickAccess onReview={() => setActiveTab("acting-approvals")} />
 
               {leaveApplicationNotifs.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-blue-200 dark:border-blue-800 overflow-hidden mb-6 lg:mb-8">

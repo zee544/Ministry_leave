@@ -184,6 +184,8 @@ async function setupDatabase() {
         to_date DATE NOT NULL,
         no_of_days DECIMAL(4, 1) NOT NULL,
         acting_officer VARCHAR(100),
+        acting_officer_user_id INT DEFAULT NULL,
+        acting_officer_role VARCHAR(50) DEFAULT NULL,
         applicant_user_id INT DEFAULT NULL,
         applicant_role VARCHAR(20) DEFAULT NULL,
         status VARCHAR(50) DEFAULT 'Pending',
@@ -209,6 +211,8 @@ async function setupDatabase() {
         message TEXT NOT NULL,
         type VARCHAR(50) NOT NULL,
         recipient VARCHAR(100) NOT NULL,
+        recipient_role VARCHAR(50) DEFAULT NULL,
+        recipient_user_id INT DEFAULT NULL,
         division VARCHAR(100),
         link VARCHAR(255),
         read_status BOOLEAN NOT NULL DEFAULT FALSE,
@@ -317,6 +321,8 @@ async function setupDatabase() {
       ['employees', 'signature_image', 'MEDIUMTEXT NULL'],
       ['leaves', 'decline_reason', 'TEXT NULL'],
       ['leaves', 'acting_officer_confirmed', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+      ['leaves', 'acting_officer_user_id', 'INT NULL'],
+      ['leaves', 'acting_officer_role', 'VARCHAR(50) NULL'],
       ['leaves', 'applicant_user_id', 'INT NULL'],
       ['leaves', 'applicant_role', 'VARCHAR(20) NULL'],
       ['leaves', 'approved_by', 'VARCHAR(100) NULL'],
@@ -325,6 +331,8 @@ async function setupDatabase() {
       ['leaves', 'target_approver_id', 'INT NULL'],
       ['leaves', 'target_approver_role', 'VARCHAR(50) NULL'],
       ['leaves', 'target_approver_email', 'VARCHAR(150) NULL'],
+      ['notifications', 'recipient_role', 'VARCHAR(50) NULL'],
+      ['notifications', 'recipient_user_id', 'INT NULL'],
       ['leaves', 'approver_signature', 'MEDIUMTEXT NULL'],
       ['leaves', 'admin_signature', 'MEDIUMTEXT NULL'],
       ['leaves', 'applicant_signature', 'MEDIUMTEXT NULL'],
@@ -334,6 +342,32 @@ async function setupDatabase() {
       if (tableName === 'leaves' && ['applicant_user_id', 'applicant_role'].includes(columnName)) {
         applicantIdentitySchemaAdded ||= wasAdded;
       }
+    }
+
+    const [notificationIdentityIndexes] = await conn.query(
+      `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'notifications'
+         AND INDEX_NAME = 'idx_notification_recipient_identity'`,
+      [DB_CONFIG.database]
+    );
+    if (notificationIdentityIndexes.length === 0) {
+      await conn.query(
+        'ALTER TABLE notifications ADD INDEX idx_notification_recipient_identity (recipient_role, recipient_user_id, created_at)'
+      );
+      console.log('[OK] Added notification recipient identity index.');
+    }
+
+    const [actingIdentityIndexes] = await conn.query(
+      `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'leaves'
+         AND INDEX_NAME = 'idx_leave_acting_identity'`,
+      [DB_CONFIG.database]
+    );
+    if (actingIdentityIndexes.length === 0) {
+      await conn.query(
+        'ALTER TABLE leaves ADD INDEX idx_leave_acting_identity (acting_officer_role, acting_officer_user_id, status, applied_on)'
+      );
+      console.log('[OK] Added Acting Officer identity index.');
     }
 
     const [applicantIndexes] = await conn.query(

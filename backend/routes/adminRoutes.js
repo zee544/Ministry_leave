@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
+const crypto = require('crypto');
 const pool = require('../config/db');
 const { broadcastNotification } = require('./notificationsStream');
 const { verifyToken, requireAdmin, requireHOD, requireAdminOrHOD } = require('../middleware/auth');
@@ -36,36 +37,145 @@ function sendEmailNotificationInBackground(send, label) {
   });
 }
 
+function generateTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+  const bytes = crypto.randomBytes(16);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
+}
+
+function actingOfficerDashboardLink(role) {
+  const dashboardByRole = {
+    employee: '/userdashboard?tab=actingapprovals',
+    hod: '/hoddashboard?tab=acting-approvals',
+    admin: '/Admindashboard?tab=acting-approvals',
+    secretary: '/secretarydashboard?tab=acting-approvals',
+    executive_officer: '/executiveofficerdashboard?tab=acting-approvals',
+  };
+  return dashboardByRole[role] || '/userdashboard?tab=actingapprovals';
+}
+
 async function notifyLeaveApplicant(leave, message, link = '/userdashboard?tab=myleaves') {
   const profileTables = { employee: 'employees', hod: 'hod', admin: 'admins', secretary: 'secretary', executive_officer: 'executive_officers' };
-  const table = profileTables[leave.applicantRole];
-  if (!table || leave.applicantUserId == null) return;
-  const [profiles] = await pool.query(`SELECT name, division FROM ${table} WHERE id = ? LIMIT 1`, [leave.applicantUserId]);
+  const role = leave.applicantRole || leave.applicant_role;
+  const userId = leave.applicantUserId ?? leave.applicant_user_id;
+  const table = profileTables[role];
+  if (!table || userId == null) return;
+  const [profiles] = await pool.query(`SELECT name, division FROM ${table} WHERE id = ? LIMIT 1`, [userId]);
   if (!profiles.length) return;
   const recipient = profiles[0].name;
   const division = profiles[0].division || leave.division || 'Ministry';
   const [result] = await pool.query(
-    `INSERT INTO notifications (message, type, recipient, division, link, read_status) VALUES (?, 'status_update', ?, ?, ?, 0)`,
-    [message, recipient, division, link]
+    `INSERT INTO notifications
+     (message, type, recipient, recipient_role, recipient_user_id, division, link, read_status)
+     VALUES (?, 'status_update', ?, ?, ?, ?, ?, 0)`,
+    [message, recipient, role, userId, division, link]
   );
-  broadcastNotification({ id: result.insertId, message, type: 'status_update', recipient, division, link, read: false, timestamp: new Date().toISOString() });
+  broadcastNotification({
+    id: result.insertId,
+    message,
+    type: 'status_update',
+    recipient,
+    recipientRole: role,
+    recipientUserId: userId,
+    division,
+    link,
+    read: false,
+    timestamp: new Date().toISOString(),
+  });
 }
 
-async function findEligibleActingOfficer(name, division, applicantRole, applicantId) {
+async function notifyProfile(role, userId, message, type, division, link) {
+  const profileTables = { employee: 'employees', hod: 'hod', admin: 'admins', secretary: 'secretary', executive_officer: 'executive_officers' };
+  const table = profileTables[role];
+  if (!table || userId == null) return;
+  const [profiles] = await pool.query(`SELECT name FROM ${table} WHERE id = ? LIMIT 1`, [userId]);
+  if (!profiles.length) return;
+  const recipient = profiles[0].name;
+  const [result] = await pool.query(
+    `INSERT INTO notifications
+     (message, type, recipient, recipient_role, recipient_user_id, division, link, read_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+    [message, type, recipient, role, userId, division || null, link]
+  );
+  broadcastNotification({
+    id: result.insertId,
+    message,
+    type,
+    recipient,
+    recipientRole: role,
+    recipientUserId: userId,
+    division: division || null,
+    link,
+    read: false,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function notifyDivisionHods(division, message, type = 'leave_application') {
+  if (!division) return;
+  const [hods] = await pool.query(
+    `SELECT id FROM hod WHERE LOWER(TRIM(division)) = LOWER(TRIM(?))`,
+    [division]
+  );
+  await Promise.all(hods.map((hod) =>
+    notifyProfile('hod', hod.id, message, type, division, '/hoddashboard?tab=leaves')
+  ));
+}
+
+async function notifyActingOfficer(leave, message) {
+  const role = leave.actingOfficerRole || leave.acting_officer_role;
+  const userId = leave.actingOfficerUserId ?? leave.acting_officer_user_id;
+  if (role && userId != null) {
+    await notifyProfile(role, userId, message, 'status_update', leave.division, actingOfficerDashboardLink(role));
+  }
+}
+
+async function findEligibleActingOfficer(name, division, applicantRole, applicantId, selectedRole = null, selectedId = null) {
+  const actingTables = {
+    employee: 'employees',
+    hod: 'hod',
+    admin: 'admins',
+    secretary: 'secretary',
+  };
+  if (selectedRole && selectedId != null) {
+    const table = actingTables[selectedRole];
+    if (!table) return null;
+    const divisionFilter = selectedRole === 'secretary' || !division
+      ? ''
+      : 'AND LOWER(TRIM(division)) = LOWER(TRIM(?))';
+    const params = selectedRole === 'secretary' || !division
+      ? [selectedId]
+      : [selectedId, division];
+    const [rows] = await pool.query(
+      `SELECT id, name, email FROM ${table}
+       WHERE id = ? ${divisionFilter}
+         ${selectedRole === 'employee' ? "AND status = 'Active'" : ''}
+       LIMIT 1`,
+      params
+    );
+    const candidate = rows[0] ? { ...rows[0], role: selectedRole } : null;
+    if (!candidate || (candidate.role === applicantRole && Number(candidate.id) === Number(applicantId))) return null;
+    if (applicantRole === 'hod' && ['hod', 'admin'].includes(candidate.role)) {
+      const descendants = await getHierarchyDescendantKeys(applicantRole, applicantId);
+      if (!descendants.has(`${candidate.role}:${candidate.id}`)) return null;
+    }
+    return candidate;
+  }
+
   const employeeQuery = division
-    ? [`SELECT id, name FROM employees WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) AND status = 'Active' LIMIT 1`, [name, division]]
-    : [`SELECT id, name FROM employees WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND status = 'Active' LIMIT 1`, [name]];
+    ? [`SELECT id, name, email FROM employees WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) AND status = 'Active' LIMIT 1`, [name, division]]
+    : [`SELECT id, name, email FROM employees WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND status = 'Active' LIMIT 1`, [name]];
   const hodQuery = division
-    ? [`SELECT id, name FROM hod WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`, [name, division]]
-    : [`SELECT id, name FROM hod WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]];
+    ? [`SELECT id, name, email FROM hod WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`, [name, division]]
+    : [`SELECT id, name, email FROM hod WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]];
   const adminQuery = division
-    ? [`SELECT id, name FROM admins WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`, [name, division]]
-    : [`SELECT id, name FROM admins WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]];
+    ? [`SELECT id, name, email FROM admins WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(division)) = LOWER(TRIM(?)) LIMIT 1`, [name, division]]
+    : [`SELECT id, name, email FROM admins WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]];
   const [[employees], [hods], [admins], [secretaries]] = await Promise.all([
     pool.query(employeeQuery[0], employeeQuery[1]),
     pool.query(hodQuery[0], hodQuery[1]),
     pool.query(adminQuery[0], adminQuery[1]),
-    pool.query(`SELECT id, name FROM secretary WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]),
+    pool.query(`SELECT id, name, email FROM secretary WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`, [name]),
   ]);
   const rows = [
     ...employees.map((row) => ({ ...row, role: 'employee' })),
@@ -115,7 +225,7 @@ async function notifyApprovalTarget(leave, message) {
   if (!table) return;
   const where = leave.target_approver_id ? 'id = ?' : 'LOWER(TRIM(email)) = LOWER(TRIM(?))';
   const value = leave.target_approver_id || leave.target_approver_email;
-  const [rows] = await pool.query(`SELECT name FROM ${table} WHERE ${where} LIMIT 1`, [value]);
+  const [rows] = await pool.query(`SELECT id, name FROM ${table} WHERE ${where} LIMIT 1`, [value]);
   if (!rows.length) return;
   const recipient = rows[0].name;
   const link = leave.target_approver_role === 'secretary'
@@ -126,10 +236,23 @@ async function notifyApprovalTarget(leave, message) {
         ? '/executiveofficerdashboard?tab=leaves'
         : '/Admindashboard?tab=leaves';
   const [result] = await pool.query(
-    `INSERT INTO notifications (message, type, recipient, division, link, read_status) VALUES (?, 'leave_application', ?, ?, ?, 0)`,
-    [message, recipient, leave.division, link]
+    `INSERT INTO notifications
+     (message, type, recipient, recipient_role, recipient_user_id, division, link, read_status)
+     VALUES (?, 'leave_application', ?, ?, ?, ?, ?, 0)`,
+    [message, recipient, leave.target_approver_role, rows[0].id, leave.division, link]
   );
-  broadcastNotification({ id: result.insertId, message, type: 'leave_application', recipient, division: leave.division, link, read: false, timestamp: new Date().toISOString() });
+  broadcastNotification({
+    id: result.insertId,
+    message,
+    type: 'leave_application',
+    recipient,
+    recipientRole: leave.target_approver_role,
+    recipientUserId: rows[0].id,
+    division: leave.division,
+    link,
+    read: false,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 // ============================================
@@ -230,6 +353,8 @@ const LEAVE_BASE_QUERY = `
     DATE_FORMAT(l.to_date, '%Y-%m-%d') AS \`to\`,
     l.no_of_days AS noOfDays,
     l.acting_officer AS actingOfficer,
+    l.acting_officer_user_id AS actingOfficerUserId,
+    l.acting_officer_role AS actingOfficerRole,
     l.status,
     l.applied_by AS appliedBy,
     DATE_FORMAT(l.applied_on, '%Y-%m-%d') AS appliedOn,
@@ -268,6 +393,11 @@ const LEAVE_BASE_QUERY = `
     ) AS applicantSignature,
     COALESCE(
       l.acting_officer_signature,
+      (SELECT e.signature_image FROM employees e WHERE e.id = l.acting_officer_user_id AND l.acting_officer_role = 'employee' LIMIT 1),
+      (SELECT h.signature_image FROM hod h WHERE h.id = l.acting_officer_user_id AND l.acting_officer_role = 'hod' LIMIT 1),
+      (SELECT a.signature_image FROM admins a WHERE a.id = l.acting_officer_user_id AND l.acting_officer_role = 'admin' LIMIT 1),
+      (SELECT s.signature_image FROM secretary s WHERE s.id = l.acting_officer_user_id AND l.acting_officer_role = 'secretary' LIMIT 1),
+      (SELECT eo.signature_image FROM executive_officers eo WHERE eo.id = l.acting_officer_user_id AND l.acting_officer_role = 'executive_officer' LIMIT 1),
       (SELECT h.signature_image FROM hod h WHERE LOWER(CONVERT(h.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(h.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1),
       (SELECT e.signature_image FROM employees e WHERE LOWER(CONVERT(e.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(e.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1)
     ) AS actingOfficerSignature
@@ -522,6 +652,8 @@ router.put('/leaves/:id/eo-approve', verifyToken, async (req, res) => {
               DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
               no_of_days as noOfDays,
               acting_officer as actingOfficer,
+              acting_officer_user_id as actingOfficerUserId,
+              acting_officer_role as actingOfficerRole,
               reason, address
        FROM leaves WHERE id = ? AND division = ?`,
       [leaveId, division]
@@ -688,7 +820,7 @@ router.put('/leaves/:id/secretary-approve', verifyToken, async (req, res) => {
       emailLeave,
       action === 'approve'
         ? `${emailLeave.employee}'s leave request was approved by ${approvedBy}.`
-        : `${emailLeave.employee}'s leave request was declined by ${declinedBy}.`
+        : `${emailLeave.employee}'s leave request was declined by ${declinedBy}.${declineReason ? ` Reason: ${declineReason}` : ''}`
     ).catch((error) => console.warn('[Notifications] Secretary applicant notification failed:', error.message));
 
     sendEmailNotificationInBackground(
@@ -717,7 +849,7 @@ router.put('/leaves/:id/secretary-approve', verifyToken, async (req, res) => {
 // CREATE LEAVE
 // ============================================
 router.post('/leaves', verifyToken, async (req, res) => {
-  let { type, fromDate, toDate, actingOfficer, reason, address } = req.body;
+  let { type, fromDate, toDate, actingOfficer, actingOfficerUserId, actingOfficerRole, reason, address } = req.body;
   const applicantRole = req.user.role;
   const applicantId = req.user.id;
 
@@ -777,11 +909,22 @@ router.post('/leaves', verifyToken, async (req, res) => {
 
     const hasActingOfficer = Boolean(actingOfficer && String(actingOfficer).trim() && String(actingOfficer).trim() !== '—');
     let assignedActingOfficer = hasActingOfficer ? actingOfficer.trim() : null;
+    let actingUser = null;
 
     if (hasActingOfficer) {
-      const actingUser = await findEligibleActingOfficer(assignedActingOfficer, applicantRole === 'secretary' ? null : division, applicantRole, applicantId);
+      actingUser = await findEligibleActingOfficer(
+        assignedActingOfficer,
+        applicantRole === 'secretary' ? null : division,
+        applicantRole,
+        applicantId,
+        actingOfficerRole,
+        actingOfficerUserId
+      );
       if (!actingUser) {
         return res.status(403).json({ message: 'The selected Acting Officer is not registered and authorized for this division.' });
+      }
+      if (applicantRole === 'admin' && actingUser.role !== 'employee') {
+        return res.status(403).json({ message: 'Admins may select an Acting Officer only from their own division employees.' });
       }
       // Persist the canonical database value so notifications, SSE, and
       // authenticated acting-officer queries all use the same identity.
@@ -808,12 +951,13 @@ router.post('/leaves', verifyToken, async (req, res) => {
 
       [result] = await connection.query(
         `INSERT INTO leaves
-         (employee, division, type, from_date, to_date, no_of_days, acting_officer,
+         (employee, division, type, from_date, to_date, no_of_days, acting_officer, acting_officer_user_id, acting_officer_role,
           applicant_user_id, applicant_role, status, applied_by, applied_on, reason, address,
           target_approver_id, target_approver_role, target_approver_email, applicant_signature)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           employee, division, type, fromDate, toDate, noOfDays, assignedActingOfficer,
+          actingUser?.id || null, actingUser?.role || null,
           applicantId, applicantRole, status, appliedBy, today, reason, address,
           workflow.targetApproverId, workflow.targetApproverRole, workflow.targetApproverEmail, applicantSignature
         ]
@@ -822,17 +966,20 @@ router.post('/leaves', verifyToken, async (req, res) => {
       if (hasActingOfficer) {
         const actingMessage = `${employee} submitted a ${type} leave request (${fromDate} to ${toDate}) and assigned you as Acting Officer.`;
         const [actingNotification] = await connection.query(
-          `INSERT INTO notifications (message, type, recipient, division, link, read_status)
-           VALUES (?, 'acting_officer', ?, ?, '/userdashboard?tab=actingapprovals', 0)`,
-          [actingMessage, assignedActingOfficer, division]
+          `INSERT INTO notifications
+           (message, type, recipient, recipient_role, recipient_user_id, division, link, read_status)
+           VALUES (?, 'acting_officer', ?, ?, ?, ?, ?, 0)`,
+          [actingMessage, assignedActingOfficer, actingUser.role, actingUser.id, division, actingOfficerDashboardLink(actingUser.role)]
         );
         notifications.push({
           id: actingNotification.insertId,
           message: actingMessage,
           type: 'acting_officer',
           recipient: assignedActingOfficer,
+          recipientRole: actingUser.role,
+          recipientUserId: actingUser.id,
           division,
-          link: '/userdashboard?tab=actingapprovals',
+          link: actingOfficerDashboardLink(actingUser.role),
           read: false,
           timestamp: new Date().toISOString(),
         });
@@ -853,17 +1000,30 @@ router.post('/leaves', verifyToken, async (req, res) => {
         if (targetTable) {
           const targetWhere = workflow.targetApproverId ? 'id = ?' : 'LOWER(TRIM(email)) = LOWER(TRIM(?))';
           const [targetRows] = await connection.query(
-            `SELECT name FROM ${targetTable} WHERE ${targetWhere} LIMIT 1`,
+            `SELECT id, name FROM ${targetTable} WHERE ${targetWhere} LIMIT 1`,
             [workflow.targetApproverId || workflow.targetApproverEmail]
           );
           if (targetRows.length) {
             const recipient = targetRows[0].name;
             const link = workflow.targetApproverRole === 'secretary' ? '/secretarydashboard?tab=pending' : workflow.targetApproverRole === 'hod' ? '/hoddashboard?tab=leaves' : '/Admindashboard?tab=leaves';
             const [notificationResult] = await connection.query(
-              `INSERT INTO notifications (message, type, recipient, division, link, read_status) VALUES (?, 'leave_application', ?, ?, ?, 0)`,
-              [message, recipient, division, link]
+              `INSERT INTO notifications
+               (message, type, recipient, recipient_role, recipient_user_id, division, link, read_status)
+               VALUES (?, 'leave_application', ?, ?, ?, ?, ?, 0)`,
+              [message, recipient, workflow.targetApproverRole, targetRows[0].id, division, link]
             );
-            notifications.push({ id: notificationResult.insertId, message, type: 'leave_application', recipient, division, link, read: false, timestamp: new Date().toISOString() });
+            notifications.push({
+              id: notificationResult.insertId,
+              message,
+              type: 'leave_application',
+              recipient,
+              recipientRole: workflow.targetApproverRole,
+              recipientUserId: targetRows[0].id,
+              division,
+              link,
+              read: false,
+              timestamp: new Date().toISOString(),
+            });
           }
         }
       }
@@ -896,11 +1056,15 @@ router.post('/leaves', verifyToken, async (req, res) => {
       noOfDays,
       reason,
       address,
+      applicantUserId: applicantId,
+      applicantRole,
+      actingOfficerUserId: actingUser?.id || null,
+      actingOfficerRole: actingUser?.role || null,
     };
 
     if (hasActingOfficer) {
       sendEmailNotificationInBackground(
-        () => sendActingOfficerAssignedEmail(leaveEmailData, assignedActingOfficer),
+        () => sendActingOfficerAssignedEmail(leaveEmailData, assignedActingOfficer, actingUser),
         'Acting officer assignment'
       );
     } else if (workflow.targetApproverEmail) {
@@ -970,8 +1134,13 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       ? await pool.query(`SELECT name${actingOfficerRole === 'secretary' ? '' : ', division'} FROM ${actingProfileTable} WHERE id = ? LIMIT 1`, [req.user.id])
       : [[]];
     const actingProfile = actingProfiles[0];
-    const authenticatedNameMatches = actingProfile &&
-      leaveData.acting_officer?.trim().toLowerCase() === String(actingProfile.name || '').trim().toLowerCase();
+    const hasActingIdentity = leaveData.acting_officer_user_id != null && leaveData.acting_officer_role;
+    const authenticatedNameMatches = actingProfile && (
+      hasActingIdentity
+        ? Number(leaveData.acting_officer_user_id) === Number(req.user.id) &&
+          leaveData.acting_officer_role === actingOfficerRole
+        : leaveData.acting_officer?.trim().toLowerCase() === String(actingProfile.name || '').trim().toLowerCase()
+    );
     const authorizedDivision = actingOfficerRole === 'secretary' || (
       actingProfile?.division && leaveData.division &&
       String(actingProfile.division).trim().toLowerCase() === String(leaveData.division).trim().toLowerCase()
@@ -1049,12 +1218,14 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       applicantRole: leaveData.applicant_role,
       employee: leaveData.employee,
       division: leaveData.division,
+      actingOfficerUserId: leaveData.acting_officer_user_id,
+      actingOfficerRole: leaveData.acting_officer_role,
     };
     void notifyLeaveApplicant(
       applicantNotificationLeave,
       action === 'confirm'
         ? `${leaveData.employee}'s leave request was confirmed by Acting Officer ${actingOfficer}.`
-        : `${leaveData.employee}'s leave request was declined by Acting Officer ${actingOfficer}.`
+        : `${leaveData.employee}'s leave request was declined by Acting Officer ${actingOfficer}.${finalDeclineReason ? ` Reason: ${finalDeclineReason}` : ''}`
     ).catch((error) => console.warn('[Notifications] Acting Officer applicant notification failed:', error.message));
     if (action === 'confirm' && leaveData.target_approver_role) {
       void notifyApprovalTarget({
@@ -1075,6 +1246,10 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       noOfDays: leaveData.no_of_days,
       actingOfficer: actingOfficer,
       reason: leaveData.reason,
+      applicantUserId: leaveData.applicant_user_id,
+      applicantRole: leaveData.applicant_role,
+      actingOfficerUserId: leaveData.acting_officer_user_id,
+      actingOfficerRole: leaveData.acting_officer_role,
     };
 
     let emailSent = null;
@@ -1170,6 +1345,8 @@ router.put('/leaves/:id/cancel', verifyToken, async (req, res) => {
       to: leave.to_date?.toISOString?.().split('T')[0] || leave.to_date,
       noOfDays: leave.no_of_days,
       actingOfficer: leave.acting_officer,
+      actingOfficerUserId: leave.acting_officer_user_id,
+      actingOfficerRole: leave.acting_officer_role,
     };
 
     const emailSent = leave.acting_officer
@@ -1248,12 +1425,21 @@ router.get('/leaves/acting-officer', verifyToken, async (req, res) => {
 
     const actingOfficerName = profiles[0].name;
     const actingOfficerDivision = profiles[0].division || req.user.division;
+    if (actingOfficerRole !== 'secretary' && !actingOfficerDivision) {
+      return res.status(404).json({ message: 'Authenticated Acting Officer division not found.' });
+    }
     const [rows] = await pool.query(
       `${LEAVE_BASE_QUERY}
-       WHERE LOWER(TRIM(l.acting_officer)) = LOWER(TRIM(?))
-         AND (? IS NULL OR ? = '' OR LOWER(TRIM(l.division)) = LOWER(TRIM(?)) OR ? = 'secretary')
+       WHERE (
+           (l.acting_officer_user_id = ? AND l.acting_officer_role = ?)
+           OR (
+             l.acting_officer_user_id IS NULL
+             AND LOWER(TRIM(l.acting_officer)) = LOWER(TRIM(?))
+             AND (? = 'secretary' OR LOWER(TRIM(l.division)) = LOWER(TRIM(?)))
+           )
+         )
        ORDER BY l.applied_on DESC, l.id DESC`,
-      [actingOfficerName, actingOfficerDivision || null, actingOfficerDivision || '', actingOfficerDivision || '', actingOfficerRole]
+      [req.user.id, actingOfficerRole, actingOfficerName, actingOfficerRole, actingOfficerDivision || '']
     );
 
     return res.status(200).json(rows);
@@ -1326,6 +1512,8 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
               DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
               DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
               no_of_days as noOfDays, acting_officer as actingOfficer,
+              acting_officer_user_id as actingOfficerUserId,
+              acting_officer_role as actingOfficerRole,
               reason, address
        FROM leaves WHERE id = ?`,
       [leaveId]
@@ -1423,7 +1611,7 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
       leave,
       action === 'approve'
         ? `${leave.appliedBy || leave.employee}'s leave request was approved by ${approvedBy}.`
-        : `${leave.appliedBy || leave.employee}'s leave request was declined by ${declinedBy}.`
+        : `${leave.appliedBy || leave.employee}'s leave request was declined by ${declinedBy}.${finalDeclineReason ? ` Reason: ${finalDeclineReason}` : ''}`
     ).catch((error) => console.warn('[Notifications] HOD applicant notification failed:', error.message));
     sendEmailNotificationInBackground(
       () => action === 'approve'
@@ -1455,7 +1643,7 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
 
-  const { type, from, to, reason, address, actingOfficer } = req.body;
+  const { type, from, to, reason, address, actingOfficer, actingOfficerUserId, actingOfficerRole } = req.body;
 
   if (!['employee', 'hod'].includes(role)) {
     return res.status(403).json({
@@ -1518,9 +1706,17 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
     const [[profile]] = await pool.query(`SELECT division, email FROM ${profileTable} WHERE id = ? LIMIT 1`, [userId]);
     const workflow = await resolveWorkflow(role, userId, profile?.email || req.user.email || '', profile?.division || leave.division);
     const nextActingOfficer = actingOfficer !== undefined ? (actingOfficer || null) : leave.acting_officer;
+    let nextActingUser = null;
     if (nextActingOfficer) {
-      const actingUser = await findEligibleActingOfficer(nextActingOfficer, role === 'secretary' ? null : (profile?.division || leave.division), role, userId);
-      if (!actingUser) {
+      nextActingUser = await findEligibleActingOfficer(
+        nextActingOfficer,
+        role === 'secretary' ? null : (profile?.division || leave.division),
+        role,
+        userId,
+        actingOfficerRole,
+        actingOfficerUserId
+      );
+      if (!nextActingUser) {
         return res.status(403).json({ success: false, message: 'The selected Acting Officer is not registered and authorized for this division.' });
       }
     }
@@ -1534,6 +1730,8 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
            reason = COALESCE(?, reason),
            address = COALESCE(?, address),
            acting_officer = ?,
+           acting_officer_user_id = ?,
+           acting_officer_role = ?,
            status = ?,
            target_approver_id = ?,
            target_approver_role = ?,
@@ -1550,7 +1748,9 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
         computedDays || null,
         reason !== undefined ? reason : null,
         address !== undefined ? address : null,
-        nextActingOfficer,
+        nextActingUser?.name || nextActingOfficer,
+        nextActingUser?.id || null,
+        nextActingUser?.role || null,
         nextActingOfficer ? 'Pending Acting Officer' : 'Pending',
         workflow.targetApproverId,
         workflow.targetApproverRole,
@@ -1570,6 +1770,8 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
         acting_officer as actingOfficer,
+        acting_officer_user_id as actingOfficerUserId,
+        acting_officer_role as actingOfficerRole,
         status, applied_by as appliedBy,
         DATE_FORMAT(applied_on, '%Y-%m-%d') as appliedOn,
         reason, address,
@@ -1583,6 +1785,29 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
       [leaveId]
     );
 
+    if (nextActingUser && (
+      Number(nextActingUser.id) !== Number(leave.acting_officer_user_id) ||
+      nextActingUser.role !== leave.acting_officer_role
+    )) {
+      const emailLeave = {
+        ...updated[0],
+        applicantUserId: updated[0].applicantUserId,
+        applicantRole: updated[0].applicantRole,
+      };
+      void notifyProfile(
+        nextActingUser.role,
+        nextActingUser.id,
+        `${updated[0].employee} updated a leave request and assigned you as Acting Officer.`,
+        'acting_officer',
+        updated[0].division,
+        actingOfficerDashboardLink(nextActingUser.role)
+      ).catch((error) => console.warn('[Notifications] Acting Officer reassignment notification failed:', error.message));
+      sendEmailNotificationInBackground(
+        () => sendActingOfficerAssignedEmail(emailLeave, nextActingUser.name, nextActingUser),
+        'Acting officer reassignment'
+      );
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Leave request updated successfully.',
@@ -1594,6 +1819,109 @@ router.put('/leaves/:id', verifyToken, async (req, res) => {
       success: false,
       message: 'Failed to update leave request.',
     });
+  }
+});
+
+router.get('/hod/employees', verifyToken, requireHOD, async (req, res) => {
+  try {
+    const [hodRows] = await pool.query(
+      'SELECT division FROM hod WHERE id = ? LIMIT 1',
+      [req.user.id]
+    );
+    if (!hodRows.length || !hodRows[0].division) {
+      return res.status(404).json({ message: 'HOD division could not be resolved.' });
+    }
+
+    const division = hodRows[0].division;
+    const [employees] = await pool.query(
+      `SELECT id, name, designation, division, email,
+        DATE_FORMAT(appointment_date, '%Y-%m-%d') AS appointment_date, status
+       FROM employees
+       WHERE LOWER(TRIM(division)) = LOWER(TRIM(?))
+       ORDER BY name ASC`,
+      [division]
+    );
+    return res.status(200).json(employees);
+  } catch (error) {
+    console.error('[HOD API Error] GET /hod/employees:', error);
+    return res.status(500).json({ message: 'Failed to fetch division employees.' });
+  }
+});
+
+router.post('/hod/employees', verifyToken, requireHOD, async (req, res) => {
+  const { name, designation, email, appointment_date } = req.body;
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  if (
+    typeof name !== 'string' || !name.trim() ||
+    typeof designation !== 'string' || !designation.trim() ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
+    name.trim().length > 100 ||
+    designation.trim().length > 100 ||
+    normalizedEmail.length > 150 ||
+    typeof appointment_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(appointment_date)
+  ) {
+    return res.status(400).json({
+      message: 'Name, designation, a valid email, and appointment date are required.',
+    });
+  }
+  const parsedAppointmentDate = new Date(`${appointment_date}T00:00:00Z`);
+  if (
+    !Number.isFinite(parsedAppointmentDate.getTime()) ||
+    parsedAppointmentDate.toISOString().slice(0, 10) !== appointment_date
+  ) {
+    return res.status(400).json({ message: 'A valid appointment date is required.' });
+  }
+
+  try {
+    const [hodRows] = await pool.query(
+      'SELECT division FROM hod WHERE id = ? LIMIT 1',
+      [req.user.id]
+    );
+    if (!hodRows.length || !hodRows[0].division) {
+      return res.status(404).json({ message: 'HOD division could not be resolved.' });
+    }
+
+    const division = hodRows[0].division;
+    const accountTables = ['employees', 'admins', 'hod', 'secretary', 'executive_officers'];
+    const duplicateChecks = await Promise.all(accountTables.map((table) =>
+      pool.query(
+        `SELECT id FROM ${table} WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1`,
+        [normalizedEmail]
+      )
+    ));
+    if (duplicateChecks.some(([rows]) => rows.length > 0)) {
+      return res.status(409).json({ message: 'An account with this email already exists.' });
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+    const [result] = await pool.query(
+      `INSERT INTO employees
+       (name, designation, division, email, password, appointment_date, status, must_change_password)
+       VALUES (?, ?, ?, ?, ?, ?, 'Active', 1)`,
+      [name.trim(), designation.trim(), division, normalizedEmail, hashedPassword, appointment_date]
+    );
+
+    return res.status(201).json({
+      message: 'Employee created successfully. Share the temporary password securely.',
+      employee: {
+        id: result.insertId,
+        name: name.trim(),
+        designation: designation.trim(),
+        division,
+        email: normalizedEmail,
+        appointment_date,
+        status: 'Active',
+      },
+      temporaryPassword,
+    });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'An account with this email already exists.' });
+    }
+    console.error('[HOD API Error] POST /hod/employees:', error);
+    return res.status(500).json({ message: 'Failed to create division employee.' });
   }
 });
 
@@ -1754,6 +2082,8 @@ router.put('/leaves/:id/status', async (req, res) => {
 
     const [emailLeaveRows] = await pool.query(
       `SELECT employee, division, type,
+        applicant_user_id AS applicantUserId, applicant_role AS applicantRole,
+        acting_officer_user_id AS actingOfficerUserId, acting_officer_role AS actingOfficerRole,
         DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
         DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
         no_of_days as noOfDays,
@@ -1766,6 +2096,22 @@ router.put('/leaves/:id/status', async (req, res) => {
     let emailSent = null;
     if (emailLeaveRows.length > 0) {
       const emailLeave = emailLeaveRows[0];
+      const statusMessage = status === 'Declined'
+        ? `Your ${emailLeave.type} leave (${emailLeave.from} to ${emailLeave.to}) was declined by Admin.${finalDeclineReason ? ` Reason: ${finalDeclineReason}` : ''}`
+        : status === 'Admin Approved'
+          ? `Your ${emailLeave.type} leave (${emailLeave.from} to ${emailLeave.to}) was pre-approved by Admin and forwarded for final approval.`
+          : `Your ${emailLeave.type} leave (${emailLeave.from} to ${emailLeave.to}) was approved by Admin.`;
+      void notifyLeaveApplicant(emailLeave, statusMessage)
+        .catch((error) => console.warn('[Notifications] Admin applicant notification failed:', error.message));
+      void notifyActingOfficer(
+        emailLeave,
+        `${emailLeave.employee}'s ${emailLeave.type} leave was ${status === 'Declined' ? 'declined' : status === 'Admin Approved' ? 'pre-approved' : 'approved'} by Admin.`
+      ).catch((error) => console.warn('[Notifications] Admin acting-officer notification failed:', error.message));
+      const hodMessage = status === 'Admin Approved'
+        ? `${emailLeave.employee}'s ${emailLeave.type} leave is awaiting final HOD approval.`
+        : `${emailLeave.employee}'s ${emailLeave.type} leave was ${status.toLowerCase()} by Admin.`;
+      void notifyDivisionHods(division, hodMessage)
+        .catch((error) => console.warn('[Notifications] HOD status notification failed:', error.message));
 
       if (status === 'Approved') {
         emailSent = await sendEmailNotification(
@@ -1940,7 +2286,6 @@ router.patch('/employees/:id/status', async (req, res) => {
     return res.status(500).json({ message: 'Failed to update employee status.' });
   }
 });
-
 
 // ============================================
 // APPROVAL RULES API (Configurable Relationships)

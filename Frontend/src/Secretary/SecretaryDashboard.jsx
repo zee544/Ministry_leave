@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import SecretaryHeader from "../Components/SecretaryHeader";
 import SecretarySidebar from "../Components/SecretarySidebar";
@@ -11,6 +11,8 @@ import ConfirmModal from "../Components/ConfirmModal.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
+import ActingApprovals from "../User/ActingApprovals.jsx";
+import ActingQuickAccess from "../User/ActingQuickAccess.jsx";
 
 function SecretaryDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,7 +23,7 @@ function SecretaryDashboard() {
     else setSearchParams({ tab }, { replace: false });
   };
 
-  const { leaves, fetchLeaves, secretaryApprove } = useLeaves();
+  const { leaves, secretaryApprove } = useLeaves();
   const { currentUser } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -35,10 +37,6 @@ function SecretaryDashboard() {
     leave: null,
     action: "approve",
   });
-
-  useEffect(() => {
-    if (fetchLeaves) fetchLeaves();
-  }, [activeTab, fetchLeaves]);
 
   // ============================================================
   // Split leaves by role and status
@@ -435,6 +433,8 @@ function SecretaryDashboard() {
                 ))}
               </div>
 
+              <ActingQuickAccess onReview={() => setActiveTab("acting-approvals")} />
+
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700">
                   <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
@@ -558,6 +558,12 @@ function SecretaryDashboard() {
                   />
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === "acting-approvals" && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
+              <ActingApprovals />
             </div>
           )}
 

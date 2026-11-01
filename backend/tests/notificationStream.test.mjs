@@ -144,4 +144,44 @@ describe('notification event stream', () => {
     expect(client.getBody()).toContain(JSON.stringify(notification));
     client.request.destroy();
   });
+
+  it('routes identity-targeted notifications only to the matching account', async () => {
+    const firstToken = jwt.sign(
+      { id: 101, role: 'employee', division: 'Accounts', name: 'Same Name' },
+      process.env.JWT_SECRET
+    );
+    const secondToken = jwt.sign(
+      { id: 102, role: 'employee', division: 'Accounts', name: 'Same Name' },
+      process.env.JWT_SECRET
+    );
+    const firstClient = await connectToStream(firstToken);
+    const secondClient = await connectToStream(secondToken);
+    const notification = {
+      id: 18,
+      recipient: 'Same Name',
+      recipientRole: 'employee',
+      recipientUserId: 102,
+      division: 'Accounts',
+      message: 'Assigned acting officer',
+    };
+
+    broadcastNotification(notification);
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Target notification was not streamed')), 1000);
+      const checkForNotification = () => {
+        if (secondClient.getBody().includes('event: notification')) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+      secondClient.response.on('data', checkForNotification);
+      checkForNotification();
+    });
+
+    expect(secondClient.getBody()).toContain(JSON.stringify(notification));
+    expect(firstClient.getBody()).not.toContain('event: notification');
+    firstClient.request.destroy();
+    secondClient.request.destroy();
+  });
 });

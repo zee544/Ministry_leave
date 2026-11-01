@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { apiUrl } from "../api.js";
 
 const LeaveContext = createContext();
@@ -15,6 +15,8 @@ const normalizeLeave = (leave) => ({
   ...leave,
   applicantUserId: leave.applicantUserId ?? leave.applicant_user_id,
   applicantRole: leave.applicantRole ?? leave.applicant_role,
+  actingOfficerUserId: leave.actingOfficerUserId ?? leave.acting_officer_user_id,
+  actingOfficerRole: leave.actingOfficerRole ?? leave.acting_officer_role,
   actingOfficerConfirmed:
     leave.acting_officer_confirmed ?? leave.actingOfficerConfirmed ?? false,
   approvedBy: leave.approvedBy ?? leave.approved_by ?? null,
@@ -27,6 +29,9 @@ export function LeaveProvider({ children }) {
   const [leaves, setLeaves] = useState(INITIAL_LEAVES);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const actingRequestRef = useRef(null);
+  const actingFetchedAtRef = useRef(0);
+  const actingFetchedUserRef = useRef("");
 
   const fetchLeaves = useCallback(async () => {
     const token = localStorage.getItem("token");
@@ -131,9 +136,30 @@ export function LeaveProvider({ children }) {
     }
   }, []);
 
-  const fetchActingOfficerLeaves = useCallback(async () => {
+  const fetchActingOfficerLeaves = useCallback(async ({ force = false } = {}) => {
     const token = localStorage.getItem("token");
-    if (!token) return;
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    if (!token || !user?.id) return;
+    const userKey = `${user.role}:${user.id}`;
+
+    if (actingRequestRef.current?.userKey === userKey) {
+      return force
+        ? actingRequestRef.current.promise.then(() => fetchActingOfficerLeaves({ force: true }))
+        : actingRequestRef.current.promise;
+    }
+    if (
+      !force &&
+      actingFetchedUserRef.current === userKey &&
+      Date.now() - actingFetchedAtRef.current < 10000
+    ) {
+      return;
+    }
+
+    let finishRequest;
+    const requestPromise = new Promise((resolve) => {
+      finishRequest = resolve;
+    });
+    actingRequestRef.current = { userKey, promise: requestPromise };
     try {
       const res = await fetch(apiUrl("/api/admin/leaves/acting-officer"), {
         headers: {
@@ -143,19 +169,37 @@ export function LeaveProvider({ children }) {
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           const mapped = data.map(normalizeLeave);
           setLeaves((prev) => {
             const fetchedById = new Map(mapped.map((l) => [String(l.id), l]));
-            const merged = prev.map((l) => fetchedById.get(String(l.id)) || l);
-            const existingIds = new Set(prev.map((l) => String(l.id)));
+            const normalize = (value) => String(value || "").trim().toLowerCase();
+            const belongsToCurrentActor = (leave) => {
+              const assignedId = leave.actingOfficerUserId ?? leave.acting_officer_user_id;
+              const assignedRole = leave.actingOfficerRole ?? leave.acting_officer_role;
+              if (assignedId != null && assignedRole) {
+                return Number(assignedId) === Number(user?.id) && assignedRole === user?.role;
+              }
+              return normalize(leave.actingOfficer ?? leave.acting_officer) === normalize(user?.name) &&
+                (user?.role === "secretary" || normalize(leave.division) === normalize(user?.division));
+            };
+            const retained = prev.filter((leave) => !belongsToCurrentActor(leave));
+            const merged = retained.map((l) => fetchedById.get(String(l.id)) || l);
+            const existingIds = new Set(merged.map((l) => String(l.id)));
             merged.push(...mapped.filter((l) => !existingIds.has(String(l.id))));
             return sortByAppliedDateDesc(merged);
           });
         }
+        actingFetchedAtRef.current = Date.now();
+        actingFetchedUserRef.current = userKey;
       }
     } catch (err) {
       console.warn("[Acting Leaves] Error:", err.message);
+    } finally {
+      finishRequest();
+      if (actingRequestRef.current?.promise === requestPromise) {
+        actingRequestRef.current = null;
+      }
     }
   }, []);
 
@@ -224,6 +268,8 @@ export function LeaveProvider({ children }) {
           toDate: leaveData.to,
           noOfDays: leaveData.noOfDays,
           actingOfficer: leaveData.actingOfficer,
+          actingOfficerUserId: leaveData.actingOfficerUserId,
+          actingOfficerRole: leaveData.actingOfficerRole,
           reason: leaveData.reason || "",
           address: leaveData.address || "",
         }),
@@ -285,8 +331,10 @@ export function LeaveProvider({ children }) {
       }
 
       const data = await response.json();
-      await fetchLeaves();
-      await fetchActingOfficerLeaves();
+      await Promise.all([
+        fetchLeaves(),
+        fetchActingOfficerLeaves({ force: true }),
+      ]);
       if (data.leave) {
         const updatedLeave = normalizeLeave(data.leave);
         setLeaves((prev) =>
@@ -496,6 +544,8 @@ export function LeaveProvider({ children }) {
             reason: updates.reason,
             address: updates.address,
             actingOfficer: updates.actingOfficer,
+            actingOfficerUserId: updates.actingOfficerUserId,
+            actingOfficerRole: updates.actingOfficerRole,
           }),
         });
 
@@ -570,11 +620,18 @@ export function LeaveProvider({ children }) {
   );
 
   const getLeavesByActingOfficer = useCallback(
-    (officerName, officerDivision = null, officerRole = null) => {
+    (officerName, officerDivision = null, officerRole = null, officerId = null) => {
       if (!officerName) return [];
       const normalize = (s) => (s || "").toString().trim().toLowerCase();
       const target = normalize(officerName);
       return leaves.filter((l) => {
+        const assignedId = l.actingOfficerUserId ?? l.acting_officer_user_id;
+        const assignedRole = l.actingOfficerRole ?? l.acting_officer_role;
+        if (assignedId != null && assignedRole) {
+          return officerId != null &&
+            Number(assignedId) === Number(officerId) &&
+            assignedRole === officerRole;
+        }
         const assigned = normalize(l.actingOfficer || l.acting_officer);
         const sameDivision = officerRole === "secretary" || !officerDivision || normalize(l.division) === normalize(officerDivision);
         return assigned === target && sameDivision;

@@ -24,12 +24,14 @@ function ExecutiveOfficerHeader({ activeTab, onMenuToggle }) {
   const notifications = getNotificationsForRole(
     "executive_officer",
     currentUser?.name,
-    userDivision
+    userDivision,
+    currentUser?.id
   );
   const unreadCount = unreadCountForRole(
     "executive_officer",
     currentUser?.name,
-    userDivision
+    userDivision,
+    currentUser?.id
   );
 
   useEffect(() => {

@@ -152,9 +152,11 @@ describe('leave application endpoint', () => {
 
   it('creates a half-day leave with the authenticated employee as applicant', async () => {
     vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
-    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
-      if (sql.includes('SELECT name, division FROM employees')) {
-        return [[{ name: 'Test Employee', division: 'Accounts' }], []];
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM employees') && sql.includes('WHERE id = ?')) {
+        return params[0] === 17
+          ? [[{ id: 17, name: 'Test Employee', email: 'test.employee@example.test', division: 'Accounts' }], []]
+          : [[{ id: 99, name: 'Acting Officer', email: 'acting@example.test' }], []];
       }
       if (sql.includes('INSERT INTO leaves')) {
         return [{ insertId: 246 }, []];
@@ -168,6 +170,8 @@ describe('leave application endpoint', () => {
       fromDate: '2026-10-13',
       toDate: '2026-10-13',
       actingOfficer: 'Acting Officer',
+      actingOfficerUserId: 99,
+      actingOfficerRole: 'employee',
       reason: 'Personal appointment',
       address: 'Test address',
     }, employeeToken());
@@ -193,6 +197,8 @@ describe('leave application endpoint', () => {
       '2026-10-13',
       0.5,
       'Acting Officer',
+      99,
+      'employee',
       17,
       'employee',
       'Pending Acting Officer',
@@ -200,6 +206,63 @@ describe('leave application endpoint', () => {
       expect.any(String),
       'Personal appointment',
       'Test address',
+      null,
+      'hod',
+      null,
+      null,
+    ]);
+    const [notificationSql, notificationValues] = query.mock.calls.find(
+      ([sql]) => sql.includes('INSERT INTO notifications')
+    );
+    expect(notificationSql).toContain('recipient_role, recipient_user_id');
+    expect(notificationValues.slice(1, 5)).toEqual([
+      'Acting Officer',
+      'employee',
+      99,
+      'Accounts',
+    ]);
+  });
+
+  it('resolves a name-only acting officer and persists the resolved account identity', async () => {
+    vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM employees') && sql.includes('WHERE id = ?')) {
+        return params[0] === 17
+          ? [[{ id: 17, name: 'Test Employee', email: 'test.employee@example.test', division: 'Accounts' }], []]
+          : [[{ id: 99, name: 'Acting Officer', email: 'acting@example.test' }], []];
+      }
+      if (sql.includes('FROM employees') && sql.includes('LOWER(TRIM(name))')) {
+        return [[{ id: 99, name: 'Acting Officer', email: 'acting@example.test' }], []];
+      }
+      if (sql.includes('INSERT INTO leaves')) return [{ insertId: 252 }, []];
+      if (sql.includes('INSERT INTO notifications')) return [{ insertId: 88 }, []];
+      return [[], []];
+    });
+
+    const response = await post('/api/admin/leaves', {
+      type: 'Half-day',
+      fromDate: '2026-10-13',
+      toDate: '2026-10-13',
+      actingOfficer: 'Acting Officer',
+    }, employeeToken());
+
+    expect(response.status).toBe(201);
+    const [, insertValues] = query.mock.calls.find(
+      ([sql]) => sql.includes('INSERT INTO leaves')
+    );
+    expect(insertValues.slice(6, 9)).toEqual([
+      'Acting Officer',
+      99,
+      'employee',
+    ]);
+    const [, notificationValues] = query.mock.calls.find(
+      ([sql]) => sql.includes('INSERT INTO notifications')
+    );
+    expect(notificationValues.slice(1, 5)).toEqual([
+      'Acting Officer',
+      'employee',
+      99,
+      'Accounts',
     ]);
   });
 
@@ -208,9 +271,11 @@ describe('leave application endpoint', () => {
     vi.spyOn(axios, 'get').mockResolvedValue({
       data: { ok: true, data: { holidays: [] } },
     });
-    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
-      if (sql.includes('SELECT name, division FROM employees')) {
-        return [[{ name: 'Test Employee', division: 'Accounts' }], []];
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM employees') && sql.includes('WHERE id = ?')) {
+        return params[0] === 17
+          ? [[{ id: 17, name: 'Test Employee', email: 'test.employee@example.test', division: 'Accounts' }], []]
+          : [[{ id: 99, name: 'Acting Officer', email: 'acting@example.test' }], []];
       }
       if (sql.includes('INSERT INTO leaves')) return [{ insertId: 251 }, []];
       return [[], []];
@@ -221,6 +286,8 @@ describe('leave application endpoint', () => {
       fromDate: '2027-02-01',
       toDate: '2027-02-01',
       actingOfficer: 'Acting Officer',
+      actingOfficerUserId: 99,
+      actingOfficerRole: 'employee',
     }, employeeToken());
 
     expect(response.status).toBe(201);
@@ -231,26 +298,26 @@ describe('leave application endpoint', () => {
 
   it('routes admin leave directly to the HOD using the admin profile identity', async () => {
     vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
-    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
-      if (sql.includes('SELECT name, division FROM admins')) {
-        return [[{ name: 'Division Admin', division: 'Accounts' }], []];
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM admins') && sql.includes('WHERE id = ?')) {
+        return [[{ id: 31, name: 'Division Admin', email: 'admin@example.test', division: 'Accounts' }], []];
       }
       if (sql.includes('INSERT INTO leaves')) return [{ insertId: 247 }, []];
       return [[], []];
     });
+
     const response = await post('/api/admin/leaves', {
       employee: 'Forged Employee',
       division: 'Other Division',
       type: 'Half-day',
       fromDate: '2026-10-13',
       toDate: '2026-10-13',
-      actingOfficer: 'Another Admin',
     }, adminToken());
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
       leaveId: 247,
-      status: 'Admin Approved',
+      status: 'Pending',
       noOfDays: 0.5,
       emailSent: null,
       emailQueued: true,
@@ -267,13 +334,80 @@ describe('leave application endpoint', () => {
       '2026-10-13',
       0.5,
       null,
+      null,
+      null,
       31,
       'admin',
-      'Admin Approved',
+      'Pending',
       'Division Admin',
       expect.any(String),
       undefined,
       undefined,
+      null,
+      'hod',
+      null,
+      null,
+    ]);
+  });
+
+  it('fetches acting assignments for the authenticated role and account with legacy division scoping', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT name, division FROM employees')) {
+        return [[{ name: 'Test Employee', division: 'Accounts' }], []];
+      }
+      if (sql.includes('FROM leaves l')) return [[], []];
+      return [[], []];
+    });
+    const token = jwt.sign(
+      { id: 17, name: 'Test Employee', role: 'employee', division: 'Accounts' },
+      process.env.JWT_SECRET
+    );
+
+    const response = await get('/api/admin/leaves/acting-officer', token);
+
+    expect(response.status).toBe(200);
+    const [sql, params] = query.mock.calls.find(([statement]) => statement.includes('FROM leaves l'));
+    expect(sql).toContain('l.acting_officer_user_id = ? AND l.acting_officer_role = ?');
+    expect(sql).toContain("l.acting_officer_user_id IS NULL");
+    expect(sql).toContain("LOWER(TRIM(l.division)) = LOWER(TRIM(?))");
+    expect(params).toEqual([17, 'employee', 'Test Employee', 'employee', 'Accounts']);
+  });
+
+  it('lets an admin assign an employee in the same division as Acting Officer', async () => {
+    vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM admins') && sql.includes('WHERE id = ?')) {
+        return [[{ id: 31, name: 'Division Admin', email: 'admin@example.test', division: 'Accounts' }], []];
+      }
+      if (sql.includes('FROM employees') && sql.includes('WHERE id = ?')) {
+        return [[{ id: 99, name: 'Acting Officer', email: 'acting@example.test' }], []];
+      }
+      if (sql.includes('INSERT INTO leaves')) return [{ insertId: 252 }, []];
+      return [[], []];
+    });
+
+    const response = await post('/api/admin/leaves', {
+      type: 'Half-day',
+      fromDate: '2026-10-13',
+      toDate: '2026-10-13',
+      actingOfficer: 'Acting Officer',
+      actingOfficerUserId: 99,
+      actingOfficerRole: 'employee',
+    }, adminToken());
+
+    expect(response.status).toBe(201);
+    expect(response.body.status).toBe('Pending Acting Officer');
+    const [insertSql, insertValues] = query.mock.calls.find(
+      ([sql]) => sql.includes('INSERT INTO leaves')
+    );
+    expect(insertSql).toContain('acting_officer_user_id, acting_officer_role');
+    expect(insertValues.slice(6, 12)).toEqual([
+      'Acting Officer',
+      99,
+      'employee',
+      31,
+      'admin',
+      'Pending Acting Officer',
     ]);
   });
 
@@ -283,12 +417,15 @@ describe('leave application endpoint', () => {
 
     expect(response.status).toBe(200);
     const [selectSql, selectValues] = query.mock.calls[0];
-    expect(selectSql).toContain('WHERE applicant_user_id = ? AND applicant_role = ?');
+    expect(selectSql).toContain('WHERE l.applicant_user_id = ? AND l.applicant_role = ?');
     expect(selectValues).toEqual([17, 'employee']);
   });
 
   it('prevents an HOD from approving their own leave request', async () => {
     const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT email, division FROM hod')) {
+        return [[{ email: 'hod@example.test', division: 'Accounts' }], []];
+      }
       if (sql.includes('SELECT id, status, applicant_user_id')) {
         return [[{
           id: 248,
@@ -306,12 +443,15 @@ describe('leave application endpoint', () => {
 
     expect(response.status).toBe(403);
     expect(response.body.message).toContain('cannot approve or reject your own');
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('returns HOD approval as soon as the leave status is committed and queues email separately', async () => {
     vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
     const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT email, division FROM hod')) {
+        return [[{ email: 'hod@example.test', division: 'Accounts' }], []];
+      }
       if (sql.includes('SELECT id, status, applicant_user_id')) {
         return [[{
           id: 250,
@@ -326,6 +466,9 @@ describe('leave application endpoint', () => {
           to: '2026-10-14',
           noOfDays: 2,
           actingOfficer: 'Acting Officer',
+          target_approver_id: null,
+          target_approver_role: null,
+          target_approver_email: null,
           reason: null,
           address: null,
         }], []];
@@ -346,7 +489,7 @@ describe('leave application endpoint', () => {
       emailQueued: true,
     });
     expect(query.mock.calls.filter(([sql]) => sql.includes('UPDATE leaves'))).toHaveLength(1);
-    expect(query.mock.calls.some(([sql]) => sql.includes('WHERE id = ? AND division = ? AND status'))).toBe(true);
+    expect(query.mock.calls.some(([sql]) => sql.includes('WHERE id = ? AND status IN'))).toBe(true);
     expect(global.setImmediate).toHaveBeenCalledTimes(1);
   });
 

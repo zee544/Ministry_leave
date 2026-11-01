@@ -10,7 +10,7 @@ const STREAM_TICKET_TTL_MS = 30 * 1000;
 const MAX_STREAM_TICKETS = 5000;
 
 function keyFor(user) {
-  return `${user.role}:${user.division || ''}:${user.name || ''}`;
+  return `${user.role}:${user.division || ''}:${user.id || ''}:${user.name || ''}`;
 }
 
 function removeClient(key, res) {
@@ -128,6 +128,8 @@ function broadcastNotification(notification) {
     recipient,
     division,
   } = notification;
+  const recipientRole = notification.recipientRole || notification.recipient_role;
+  const recipientUserId = notification.recipientUserId ?? notification.recipient_user_id;
 
   const normalize = (value) =>
     (value || '').toString().trim().toLowerCase();
@@ -138,33 +140,32 @@ function broadcastNotification(notification) {
   const targets = [];
 
   for (const [key, set] of clients.entries()) {
-    const [role, div, ...nameParts] = key.split(':');
-
+    const [role, div, userId, ...nameParts] = key.split(':');
     const name = nameParts.join(':');
 
     const nRole = normalize(role);
     const nDiv = normalize(div);
+    const nId = normalize(userId);
     const nName = normalize(name);
 
     let matches = false;
 
-    // Admin / HOD
-    if (
-      targetRecipient === 'admin' ||
-      targetRecipient === 'hod'
-    ) {
+    if (recipientRole && recipientUserId != null) {
       matches =
-        nRole === targetRecipient &&
+        nRole === normalize(recipientRole) &&
+        nId === normalize(recipientUserId) &&
         (
           !targetDivision ||
-          nDiv === targetDivision ||
-          nDiv === ''
+          !nDiv ||
+          nDiv === targetDivision
         );
+    } else if (targetRecipient === 'admin' || targetRecipient === 'hod') {
+      matches = nRole === targetRecipient &&
+        (!targetDivision || nDiv === targetDivision || nDiv === '');
     }
-
-    // Normal employee
     else {
-      matches = nName === targetRecipient;
+      matches = nName === targetRecipient &&
+        (!targetDivision || nDiv === targetDivision);
     }
 
     if (matches) {

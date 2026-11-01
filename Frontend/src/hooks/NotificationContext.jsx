@@ -362,15 +362,22 @@ export function NotificationProvider({ children }) {
   }, []);
 
   const getNotificationsForRole = useCallback(
-    (role, userName, division = null) => {
+    (role, userName, division = null, userId = null) => {
       const normalize = (s) => (s || "").toString().trim().toLowerCase();
 
       return notifications.filter((n) => {
-        // The backend already scopes notifications to the current user's role + division.
-        // We only need to do a lightweight client-side filter to match the recipient field.
+        const notificationRole = n.recipientRole ?? n.recipient_role;
+        const notificationUserId = n.recipientUserId ?? n.recipient_user_id;
+        const hasIdentity = notificationRole != null && notificationUserId != null;
+        if (hasIdentity) {
+          if (notificationRole !== role || Number(notificationUserId) !== Number(userId)) return false;
+          if (role === "admin" || role === "hod") {
+            return normalize(n.division) === normalize(division);
+          }
+          return true;
+        }
 
         if (role === "admin") {
-          // Must be an admin-targeted notification in the same division (or global)
           if (n.recipient !== "admin" && n.recipient !== userName) return false;
           if (!division) return !n.division;
           const nDiv = normalize(n.division);
@@ -379,12 +386,10 @@ export function NotificationProvider({ children }) {
         }
 
         if (role === "hod") {
-          // Must be a hod-targeted notification in the exact same division (or global)
           if (n.recipient !== "hod" && n.recipient !== userName) return false;
           if (!division) return !n.division;
           const nDiv = normalize(n.division);
           const uDiv = normalize(division);
-          // Strict exact match — no fuzzy substring stripping that bleeds across divisions
           return !nDiv || nDiv === uDiv;
         }
 
@@ -407,8 +412,8 @@ export function NotificationProvider({ children }) {
   );
 
   const unreadCountForRole = useCallback(
-    (role, userName, division = null) => {
-      return getNotificationsForRole(role, userName, division).filter(
+    (role, userName, division = null, userId = null) => {
+      return getNotificationsForRole(role, userName, division, userId).filter(
         (n) => !n.read
       ).length;
     },

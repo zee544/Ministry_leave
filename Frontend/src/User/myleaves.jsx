@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
@@ -6,7 +6,7 @@ import { useNotifications } from "../hooks/NotificationContext.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 
 function Myleaves() {
-    const { leaves, updateLeave, cancelLeave, getLeaveById, fetchLeaves } = useLeaves();
+    const { leaves, isLoading, updateLeave, cancelLeave, getLeaveById } = useLeaves();
     const { currentUser } = useUser();
     const { addNotification } = useNotifications();
 
@@ -19,19 +19,7 @@ function Myleaves() {
     const [toast, setToast] = useState("");
     const [selectedLeave, setSelectedLeave] = useState(null);
     const [showPrintModal, setShowPrintModal] = useState(false);
-    const [loading, setLoading] = useState(true);
     const [isCancelling, setIsCancelling] = useState(false);
-
-    useEffect(() => {
-        const loadLeaves = async () => {
-            setLoading(true);
-            if (fetchLeaves) {
-                await fetchLeaves();
-            }
-            setLoading(false);
-        };
-        loadLeaves();
-    }, []);
 
     const myLeaves = leaves.filter(
         (leave) =>
@@ -39,7 +27,11 @@ function Myleaves() {
             (leave.applicantRole ?? leave.applicant_role) === currentUser.role
     );
 
-    const canModify = (status) => status === "Pending" || status === "Pending Acting Officer";
+    const canCancel = (leave) =>
+        leave.status === "Pending" || leave.status === "Pending Acting Officer";
+    const canEdit = (leave) =>
+        canCancel(leave) &&
+        Number(leave.actingOfficerConfirmed ?? leave.acting_officer_confirmed ?? 0) !== 1;
 
     const calculateDays = (from, resumingDate) => {
         if (!from || !resumingDate) return "";
@@ -298,14 +290,16 @@ function Myleaves() {
                     >
                         View
                     </button>
-                    {!isAdmin && canModify(item.status) && (
+                    {!isAdmin && canCancel(item) && (
                         <>
-                            <button
-                                onClick={() => handleEdit(item)}
-                                className="px-3 py-1 text-md bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                                Edit
-                            </button>
+                            {canEdit(item) && (
+                                <button
+                                    onClick={() => handleEdit(item)}
+                                    className="px-3 py-1 text-md bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                    Edit
+                                </button>
+                            )}
                             <button
                                 onClick={() => setCancelTarget(item.id)}
                                 className="px-3 py-1 text-md bg-red-500 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
@@ -355,14 +349,16 @@ function Myleaves() {
                 >
                     View
                 </button>
-                {!isAdmin && canModify(leave.status) && (
+                {!isAdmin && canCancel(leave) && (
                     <>
-                        <button
-                            onClick={() => handleEdit(leave)}
-                            className="flex-1 px-2 py-1.5 bg-blue-500 text-white text-[11px] rounded-md hover:bg-blue-700 transition-colors font-medium"
-                        >
-                            Edit
-                        </button>
+                        {canEdit(leave) && (
+                            <button
+                                onClick={() => handleEdit(leave)}
+                                className="flex-1 px-2 py-1.5 bg-blue-500 text-white text-[11px] rounded-md hover:bg-blue-700 transition-colors font-medium"
+                            >
+                                Edit
+                            </button>
+                        )}
                         <button
                             onClick={() => setCancelTarget(leave.id)}
                             className="flex-1 px-2 py-1.5 bg-red-500 text-white text-[11px] rounded-md hover:bg-red-700 transition-colors font-medium"
@@ -477,7 +473,7 @@ function Myleaves() {
                 </div>
             )}
 
-            {loading ? (
+            {isLoading ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading your leaves...</div>
             ) : myLeaves.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 dark:text-gray-500">

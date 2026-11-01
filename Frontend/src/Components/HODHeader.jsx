@@ -12,7 +12,7 @@ function HODHeader({ activeTab, onMenuToggle }) {
 
     const userDivision = currentUser?.division || "Administration";
 
-    const hodNotifications = getNotificationsForRole("hod", null, userDivision);
+    const hodNotifications = getNotificationsForRole("hod", currentUser?.name, userDivision, currentUser?.id);
     const unreadCount = hodNotifications.filter((n) => !n.read).length;
 
     useEffect(() => {
