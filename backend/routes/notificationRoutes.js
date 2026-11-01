@@ -24,12 +24,12 @@ router.get('/', verifyToken, async (req, res) => {
           read_status as \`read\`,
           created_at as timestamp
         FROM notifications
-        WHERE recipient = 'admin'
+        WHERE (recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
           AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)
         ORDER BY created_at DESC
         LIMIT 100
       `;
-      params = [userDivision];
+      params = [userName, userDivision];
     } else if (role === 'hod') {
       // Scope HOD notifications strictly to their division — no NULL/global bleed across HODs
       query = `
@@ -37,12 +37,12 @@ router.get('/', verifyToken, async (req, res) => {
           read_status as \`read\`,
           created_at as timestamp
         FROM notifications
-        WHERE recipient = 'hod'
+        WHERE (recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
           AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))
         ORDER BY created_at DESC
         LIMIT 100
       `;
-      params = [userDivision];
+      params = [userName, userDivision];
     } else {
       query = `
         SELECT id, message, type, recipient, division, link,
@@ -125,11 +125,11 @@ router.patch('/:id/read', verifyToken, async (req, res) => {
     let ownershipParams;
 
     if (role === 'admin') {
-      ownershipQuery = `recipient = 'admin' AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
-      ownershipParams = [userDivision];
+      ownershipQuery = `(recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))) AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
+      ownershipParams = [userName, userDivision];
     } else if (role === 'hod') {
-      ownershipQuery = `recipient = 'hod' AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
-      ownershipParams = [userDivision];
+      ownershipQuery = `(recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))) AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
+      ownershipParams = [userName, userDivision];
     } else {
       ownershipQuery = `recipient = ?`;
       ownershipParams = [userName];
@@ -168,12 +168,14 @@ router.patch('/read-all', verifyToken, async (req, res) => {
 
     if (role === 'admin') {
       query = `UPDATE notifications SET read_status = 1 
-               WHERE recipient = 'admin' AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
-      params = [userDivision];
+               WHERE (recipient = 'admin' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
+                 AND (LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)) OR division IS NULL)`;
+      params = [userName, userDivision];
     } else if (role === 'hod') {
       query = `UPDATE notifications SET read_status = 1 
-               WHERE recipient = 'hod' AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
-      params = [userDivision];
+               WHERE (recipient = 'hod' OR LOWER(CONVERT(recipient USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4)))
+                 AND LOWER(CONVERT(division USING utf8mb4)) = LOWER(CONVERT(? USING utf8mb4))`;
+      params = [userName, userDivision];
     } else {
       query = `UPDATE notifications SET read_status = 1 WHERE recipient = ?`;
       params = [userName];

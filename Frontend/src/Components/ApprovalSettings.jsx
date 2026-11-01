@@ -20,7 +20,7 @@ function ApprovalSettings({ role }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Failed to load approval settings.");
       setCandidates(data.candidates || []);
-      setSelectedId(data.selected?.id ? String(data.selected.id) : "");
+      setSelectedId(data.selected?.id ? `${data.selected.role}:${data.selected.id}` : "");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -37,13 +37,17 @@ function ApprovalSettings({ role }) {
     setError("");
     try {
       const token = localStorage.getItem("token");
+      const [approverRole, approverId] = selectedId ? selectedId.split(":") : [null, null];
       const response = await fetch(apiUrl("/api/admin/approval-settings"), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ approverId: selectedId || null }),
+        body: JSON.stringify({
+          approverId: approverId || null,
+          approverRole,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Failed to save approval settings.");
@@ -55,7 +59,7 @@ function ApprovalSettings({ role }) {
     }
   };
 
-  const approverLabel = role === "admin" ? "HOD" : "Secretary";
+  const approverLabel = role === "admin" ? "authorized HOD" : "authorized approver";
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
@@ -78,7 +82,7 @@ function ApprovalSettings({ role }) {
           >
             <option value="">Use default workflow</option>
             {candidates.map((officer) => (
-              <option key={officer.id} value={officer.id}>
+              <option key={`${officer.role}:${officer.id}`} value={`${officer.role}:${officer.id}`}>
                 {officer.name} — {officer.designation || approverLabel}{officer.email ? ` (${officer.email})` : ""}
               </option>
             ))}

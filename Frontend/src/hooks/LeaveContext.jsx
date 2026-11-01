@@ -193,6 +193,14 @@ export function LeaveProvider({ children }) {
     };
   }, [fetchLeaves]);
 
+  useEffect(() => {
+    const handleLeaveRefresh = () => {
+      if (localStorage.getItem("token")) fetchLeaves();
+    };
+    window.addEventListener("leaves:refresh", handleLeaveRefresh);
+    return () => window.removeEventListener("leaves:refresh", handleLeaveRefresh);
+  }, [fetchLeaves]);
+
   const addLeave = useCallback(async (leaveData) => {
     const token = localStorage.getItem("token");
     let savedLeave = null;
@@ -278,6 +286,7 @@ export function LeaveProvider({ children }) {
 
       const data = await response.json();
       await fetchLeaves();
+      await fetchActingOfficerLeaves();
       if (data.leave) {
         const updatedLeave = normalizeLeave(data.leave);
         setLeaves((prev) =>
@@ -292,7 +301,7 @@ export function LeaveProvider({ children }) {
       }
       return data;
     },
-    [fetchLeaves]
+    [fetchLeaves, fetchActingOfficerLeaves]
   );
 
   const updateLeaveStatus = useCallback(
@@ -561,13 +570,14 @@ export function LeaveProvider({ children }) {
   );
 
   const getLeavesByActingOfficer = useCallback(
-    (officerName) => {
+    (officerName, officerDivision = null, officerRole = null) => {
       if (!officerName) return [];
       const normalize = (s) => (s || "").toString().trim().toLowerCase();
       const target = normalize(officerName);
       return leaves.filter((l) => {
         const assigned = normalize(l.actingOfficer || l.acting_officer);
-        return assigned === target;
+        const sameDivision = officerRole === "secretary" || !officerDivision || normalize(l.division) === normalize(officerDivision);
+        return assigned === target && sameDivision;
       });
     },
     [leaves]

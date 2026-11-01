@@ -27,6 +27,7 @@ import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
+import ActingApprovals from "../User/ActingApprovals.jsx";
 
 function AdminDashboard() {
   const { leaves, updateLeaveStatus, fetchLeaves } = useLeaves();
@@ -696,6 +697,7 @@ function AdminDashboard() {
                 <Employee openCreate={openCreateEmployee} />
               )}
               {activeTab === "leaves" && <LeaveApprove />}
+              {activeTab === "acting-approvals" && <ActingApprovals />}
               {activeTab === "apply-leave" && <ApplyLeave />}
               {activeTab === "my-leaves" && <Myleaves />}
               {activeTab === "secretaries" && <SecretaryAccounts />}

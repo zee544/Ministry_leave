@@ -389,9 +389,6 @@ export default function LeaveApprovalModal({
       const sig = getSignature(candidate);
       if (sig) { hodSignature = sig; break; }
     }
-    if (!hodSignature && isSecretaryFinalized) {
-      hodSignature = getSignature("secretary") || getSignature("Secretary") || null;
-    }
     if (!hodSignature) {
       hodSignature =
         getSignature("hod") ||
@@ -721,7 +718,7 @@ export default function LeaveApprovalModal({
                       </div>
                       <div className="p-1 text-center flex flex-col justify-center">
                         {hodDecision === "allowed" ? (
-                          <SignatureImg src={hodSignature} name={approvedBy || (isSecretaryFinalized ? "Secretary" : "Head of Dept")} isSigned={true} date={hodSignedDate} className="w-full mb-0.5" />
+                          <SignatureImg src={applicantSignature} name={selectedLeave?.employee || ""} isSigned={Boolean(applicantSignature)} date={selectedLeave?.appliedOn || ""} className="w-full mb-0.5" />
                         ) : hodDecision === "not_allowed" ? (
                           <div className="border-b border-dashed border-black min-h-4 flex items-center justify-center text-[6px] text-red-600 italic"></div>
                         ) : (

@@ -165,6 +165,14 @@ export function NotificationProvider({ children }) {
             if (prev.some((item) => item.id === notification.id)) return prev;
             return [notification, ...prev];
           });
+          // A new assignment or status decision invalidates the relevant leave queue.
+          // Let the dashboard refresh without a full-page reload.
+          if (["acting_officer", "leave_application", "status_update"].includes(notification.type)) {
+            window.dispatchEvent(new Event("leaves:refresh"));
+          }
+          if (notification.type === "acting_officer") {
+            window.dispatchEvent(new Event("leaves:acting-refresh"));
+          }
         } catch (err) {
           console.warn("[SSE] Failed to parse notification:", err.message);
         }
@@ -363,7 +371,7 @@ export function NotificationProvider({ children }) {
 
         if (role === "admin") {
           // Must be an admin-targeted notification in the same division (or global)
-          if (n.recipient !== "admin") return false;
+          if (n.recipient !== "admin" && n.recipient !== userName) return false;
           if (!division) return !n.division;
           const nDiv = normalize(n.division);
           const uDiv = normalize(division);
@@ -372,7 +380,7 @@ export function NotificationProvider({ children }) {
 
         if (role === "hod") {
           // Must be a hod-targeted notification in the exact same division (or global)
-          if (n.recipient !== "hod") return false;
+          if (n.recipient !== "hod" && n.recipient !== userName) return false;
           if (!division) return !n.division;
           const nDiv = normalize(n.division);
           const uDiv = normalize(division);

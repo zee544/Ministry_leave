@@ -4,9 +4,11 @@ import { useSignatures } from "../hooks/SignatureContext.jsx";
 import SignatureUpload from "../Components/SignatureUpload.jsx";
 import { apiUrl } from "../api.js";
 import ApprovalSettings from "../Components/ApprovalSettings.jsx";
+import { useLeaves } from "../hooks/LeaveContext.jsx";
 function HODSettings() {
-  const { currentUser } = useUser();
+const { currentUser, leaveEntitlements } = useUser();
   const { getSignature } = useSignatures();
+  const { leaves } = useLeaves(); 
 
   // Use a user-ID-scoped key so each HOD's signature is stored separately in localStorage
   // Falls back to role-only key for backwards compatibility if ID is missing
@@ -254,16 +256,73 @@ function HODSettings() {
     errorsObj[field]
       ? "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-red-400 dark:border-red-500 bg-red-50/40 dark:bg-red-900/20 text-xs sm:text-sm text-gray-800 dark:text-white outline-none focus:ring-2 focus:ring-red-400/40 transition"
       : "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs sm:text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-[#0000A0] dark:focus:border-blue-500 focus:ring-2 focus:ring-[#0000A0]/30 dark:focus:ring-blue-500/30 transition";
+  // ============ LEAVE BALANCE CALCULATIONS ============
+  const currentYear = new Date().getFullYear();
+
+  const myLeaves = (leaves || []).filter((l) => {
+    const isMyLeave =
+      Number(l.applicantUserId ?? l.applicant_user_id) === Number(currentUser?.id) &&
+      (l.applicantRole ?? l.applicant_role) === currentUser?.role &&
+      (l.status === "Approved" || l.status === "Admin Approved");
+
+    if (!isMyLeave || !l.from) return false;
+    return new Date(l.from).getFullYear() === currentYear;
+  });
+
+  const getLeaveDays = (leave) => {
+    if (leave.noOfDays) return parseFloat(leave.noOfDays) || 0;
+    if (leave.days) return parseFloat(leave.days) || 0;
+    if (leave.type === "Half-day") return 0.5;
+    if (!leave.from || !leave.to) return 0;
+    const start = new Date(leave.from);
+    const end = new Date(leave.to);
+    if (isNaN(start) || isNaN(end)) return 0;
+    return Math.max(1, Math.round((end - start) / 86400000) + 1);
+  };
+
+  const buildBalance = (type) => {
+    const entitlement = leaveEntitlements?.[type];
+    if (!entitlement) return null;
+    const used = myLeaves
+      .filter((l) => l.type === type)
+      .reduce((sum, l) => sum + getLeaveDays(l), 0);
+    const remaining = Math.max(0, entitlement.total - used);
+    const pct = entitlement.total > 0
+      ? Math.round((remaining / entitlement.total) * 100)
+      : 0;
+    return { type, ...entitlement, used, remaining, pct };
+  };
+
+  const annual = buildBalance("Annual");
+  const casual = buildBalance("Casual");
+  const other = buildBalance("Other");
+  const halfDayCount = myLeaves.filter((l) => l.type === "Half-day").length;
+
+  const balanceRows = [annual, casual, other].filter(Boolean).map((b) => ({
+    label: b.type === "Annual"
+      ? "Vacation Leave"
+      : (b.type.length > 6 ? b.type : `${b.type} Leave`.replace(" Leave Leave", " Leave")),
+    remaining: b.remaining,
+    total: b.total,
+    pct: b.pct,
+    color: b.color || "bg-blue-500",
+  }));
+
+  balanceRows.push({
+    label: "Half-day Leave",
+    remaining: null,
+    total: null,
+    pct: 0,
+    color: "bg-purple-500",
+    isHalfDay: true,
+    used: halfDayCount,
+  });
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-500 dark:text-gray-400">
-        <svg className="animate-spin h-7 w-7 sm:h-8 sm:w-8 mb-3 text-[#0000A0] dark:text-blue-400" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-        </svg>
-        <span className="text-xs sm:text-sm">Loading settings...</span>
-      </div>
+      <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-500 dark:text-gray-400"></div>
+
+    
     );
   }
 
@@ -411,6 +470,51 @@ function HODSettings() {
               </div>
             </div>
           </div>
+          {/* ============ Leave Balance ============ */}
+<div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
+    <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+      Leave Balance ({currentYear})
+    </h2>
+    <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+      Your remaining leave entitlements for this year.
+    </p>
+  </div>
+
+  <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-3.5 sm:space-y-4">
+    {balanceRows.map((b) => (
+      <div key={b.label}>
+        {b.isHalfDay ? (
+          <div className="flex justify-between items-center">
+            <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+              {b.label}
+            </span>
+            <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+              {b.used} time{b.used !== 1 ? "s" : ""} taken
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                {b.label}
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+                {b.remaining} / {b.total} days
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div
+                className={`${b.color} h-2 rounded-full transition-all`}
+                style={{ width: `${b.pct}%` }}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    ))}
+  </div>
+</div>
 
           {/* ============ Admin Information ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">

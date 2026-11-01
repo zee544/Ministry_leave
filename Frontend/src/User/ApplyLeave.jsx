@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import { calculateWorkingDays, yearsInRange } from "../utils/leaveDays.js";
 import { apiUrl } from "../api.js";
 
 function ApplyLeave() {
-    const { addNotification } = useNotifications();
     const { addLeave } = useLeaves();
     const { currentUser, employees, fetchEmployees } = useUser();
     const isAdmin = currentUser?.role === "admin";
@@ -84,25 +82,20 @@ function ApplyLeave() {
         yearsInRange(fromDate, toDate).forEach((y) => fetchHolidaysForYear(y));
     }, [formData.fromDate, formData.toDate]);
 
-     useEffect(() => {
-        if (!employees || employees.length === 0 || !currentUser) {
+    useEffect(() => {
+        if (!currentUser) {
             setActingOfficers([]);
             return;
         }
-
-        const userDivision = currentUser.division || "";
-        const userDivisionLower = userDivision.toLowerCase().trim();
-
-        const filtered = employees.filter((emp) => {
-            if (emp.name?.toLowerCase() === currentUser.name?.toLowerCase()) return false;
-            if (emp.status !== "Active") return false;
-
-            if (!userDivisionLower) return true;
-            const empDivision = (emp.division || "").toLowerCase().trim();
-            return empDivision === userDivisionLower;
-        });
-
-        setActingOfficers(filtered);
+        const token = localStorage.getItem("token");
+        fetch(apiUrl("/api/admin/employees/acting-officers"), {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then((res) => res.ok ? res.json() : [])
+            .then((rows) => setActingOfficers(rows.filter((officer) =>
+                !(officer.role === currentUser.role && Number(officer.id) === Number(currentUser.id))
+            )))
+            .catch(() => setActingOfficers([]));
     }, [employees, currentUser]);
     const getAllHolidaysForRange = (from, to) => {
         const years = yearsInRange(from, to);
@@ -191,50 +184,6 @@ function ApplyLeave() {
 
             const savedLeave = await addLeave(leaveData);
             console.log("Leave submitted successfully:", savedLeave);
-
-            if (isAdmin) {
-                addNotification(
-                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) is awaiting HOD approval.`,
-                    "leave_application",
-                    "hod",
-                    currentUser.division,
-                );
-            } else if (hasActingOfficer) {
-                addNotification(
-                    `You have been assigned as Acting Officer for ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}). Please confirm.`,
-                    "acting_officer",
-                    formData.actingOfficer,
-                    currentUser.division,
-                );
-
-                addNotification(
-                    `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting confirmation from ${formData.actingOfficer}.`,
-                    "status_update",
-                    currentUser.name,
-                    currentUser.division,
-                );
-
-                addNotification(
-                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Acting Officer confirmation.`,
-                    "leave_application",
-                    "admin",
-                    currentUser.division,
-                );
-            } else {
-                addNotification(
-                    `Your ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting Admin approval.`,
-                    "status_update",
-                    currentUser.name,
-                    currentUser.division,
-                );
-
-                addNotification(
-                    `New leave application: ${currentUser.name}'s ${formData.leaveType} leave (${formData.fromDate} to ${formData.toDate}) has been submitted and is awaiting your approval.`,
-                    "leave_application",
-                    "admin",
-                    currentUser.division,
-                );
-            }
 
             setShowSuccess(true);
             setTimeout(() => setShowSuccess(false), 5000);
@@ -415,7 +364,7 @@ function ApplyLeave() {
                             disabled={
                                 isSubmitting || 
                                 loading || 
-                                (!isAdmin && !formData.actingOfficer)
+                                (!['admin', 'hod', 'secretary', 'executive_officer'].includes(currentUser?.role) && !formData.actingOfficer)
                             }
                             className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-teal-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >

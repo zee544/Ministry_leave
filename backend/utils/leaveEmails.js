@@ -42,7 +42,37 @@ async function findEmployeeEmail(name, division) {
   );
   if (hodRows.length > 0 && hodRows[0].email) return hodRows[0].email;
 
+  const [secretaryRows] = await pool.query(
+    `SELECT email FROM secretary
+     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+     LIMIT 1`,
+    [name]
+  );
+  if (secretaryRows.length > 0 && secretaryRows[0].email) return secretaryRows[0].email;
+
   return null;
+}
+
+async function findApplicantEmail(leave) {
+  if (leave?.applicantUserId && leave?.applicantRole) {
+    const tableByRole = {
+      employee: 'employees',
+      hod: 'hod',
+      admin: 'admins',
+      secretary: 'secretary',
+      executive_officer: 'executive_officers',
+    };
+    const table = tableByRole[String(leave.applicantRole).toLowerCase()];
+    if (table) {
+      const [rows] = await pool.query(
+        `SELECT email FROM ${table} WHERE id = ? LIMIT 1`,
+        [leave.applicantUserId]
+      );
+      if (rows[0]?.email) return rows[0].email;
+    }
+  }
+
+  return findEmployeeEmail(leave?.employee, leave?.division);
 }
 
 async function findDivisionAdminEmail(division) {
@@ -61,6 +91,18 @@ async function findDivisionHodEmail(division) {
     [division]
   );
   return rows[0]?.email || null;
+}
+
+async function sendHodAwaitingFinalApprovalEmail(leave) {
+  const email = await findDivisionHodEmail(leave.division);
+  if (!email) throw new Error('HOD email address was not found for the division.');
+  const action = emailAction('/hoddashboard?tab=leaves', 'Review Leave Request');
+  await sendEmail({
+    to: email,
+    subject: `Leave Approval Required — ${leave.employee}`,
+    text: `${leave.employee} submitted a ${leave.type} leave from ${leave.from} to ${leave.to}. Review the request: ${action.url}`,
+    html: wrapTemplate({ title: 'Leave Approval Required', accentColor: '#7c3aed', bodyHtml: `<p>Hello,</p><p>${leave.employee} submitted a leave request awaiting HOD approval.</p>${action.html}` }),
+  });
 }
 
 /**
@@ -194,6 +236,23 @@ async function sendAdminNewLeaveEmail(leave) {
   });
 }
 
+async function sendApprovalRequestEmail({ leave, approverEmail, approverRole }) {
+  if (!approverEmail) throw new Error('Approval recipient email address was not found.');
+  const roleLabel = approverRole === 'secretary' ? 'Secretary' : approverRole === 'hod' ? 'HOD' : 'Admin';
+  const actionPath = approverRole === 'secretary' ? '/secretarydashboard?tab=pending' : approverRole === 'hod' ? '/hoddashboard?tab=leaves' : '/Admindashboard?tab=leaves';
+  const action = emailAction(actionPath, 'Review Leave Request');
+  await sendEmail({
+    to: approverEmail,
+    subject: `Leave Approval Required — ${leave.employee}`,
+    text: `${leave.employee} submitted a ${leave.type} leave from ${leave.from} to ${leave.to}. Review as ${roleLabel}: ${action.url}`,
+    html: wrapTemplate({
+      title: 'Leave Approval Required',
+      accentColor: '#2563eb',
+      bodyHtml: `<p>Hello,</p><p>${leave.employee} submitted a leave request for your approval as the authorized ${roleLabel}.</p><p><strong>Division:</strong> ${leave.division}<br/><strong>Leave:</strong> ${leave.type}<br/><strong>Dates:</strong> ${leave.from} to ${leave.to}</p>${action.html}`,
+    }),
+  });
+}
+
 // ═══════════════════════════════════════════════
 // STAGE 2a — Acting Officer CONFIRMED → notify BOTH Admin & HOD (parallel)
 // ═══════════════════════════════════════════════
@@ -299,8 +358,8 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
 // STAGE 4a — FINAL APPROVAL (Admin or HOD) → notify Employee + Acting Officer
 // ═══════════════════════════════════════════════
 async function sendFinalApprovalEmails(leave) {
-  const employeeEmail = await findEmployeeEmail(leave.employee, leave.division);
-  if (!employeeEmail) throw new Error('Employee email address was not found.');
+  const employeeEmail = await findApplicantEmail(leave);
+  if (!employeeEmail) throw new Error('Applicant email address was not found.');
   const employeeAction = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
   const deliveryErrors = [];
 
@@ -443,8 +502,8 @@ async function sendActingOfficerCancelledEmail(leave, reason) {
 // STAGE 4b — HOD DECLINED → notify Employee
 // ═══════════════════════════════════════════════
 async function sendEmployeeDeclinedByHodEmail(leave, reason) {
-  const email = await findEmployeeEmail(leave.employee, leave.division);
-  if (!email) throw new Error('Employee email address was not found.');
+  const email = await findApplicantEmail(leave);
+  if (!email) throw new Error('Applicant email address was not found.');
   const action = emailAction('/userdashboard?tab=myleaves', 'View My Leave Requests');
 
   await sendEmail({
@@ -483,4 +542,6 @@ module.exports = {
   sendEmployeeDeclinedByHodEmail,
   sendActingOfficerCancelledEmail,
   sendAdminNewLeaveEmail,
+  sendApprovalRequestEmail,
+  sendHodAwaitingFinalApprovalEmail,
 };

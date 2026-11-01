@@ -1,14 +1,12 @@
 import { useRef, useState, useEffect } from "react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
-import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
 
 function ActingApprovals() {
-    const { confirmActingOfficer, getLeavesByActingOfficer, fetchLeaves, fetchActingOfficerLeaves } = useLeaves();
-    const { addNotification } = useNotifications();
+    const { confirmActingOfficer, getLeavesByActingOfficer, fetchActingOfficerLeaves } = useLeaves();
     const { currentUser } = useUser();
     const [toast, setToast] = useState("");
     const [selectedLeave, setSelectedLeave] = useState(null);
@@ -28,7 +26,6 @@ function ActingApprovals() {
             setLoading(true);
             setError(null);
             try {
-                if (fetchLeaves) await fetchLeaves();
                 if (fetchActingOfficerLeaves) await fetchActingOfficerLeaves();
             } catch (err) {
                 console.error("Error loading leaves:", err);
@@ -38,9 +35,15 @@ function ActingApprovals() {
             }
         };
         loadLeaves();
-    }, [fetchLeaves, fetchActingOfficerLeaves]);
+    }, [fetchActingOfficerLeaves]);
 
-    const myAssignments = getLeavesByActingOfficer(currentUser.name);
+    useEffect(() => {
+        const refreshAssignments = () => fetchActingOfficerLeaves?.();
+        window.addEventListener("leaves:acting-refresh", refreshAssignments);
+        return () => window.removeEventListener("leaves:acting-refresh", refreshAssignments);
+    }, [fetchActingOfficerLeaves]);
+
+    const myAssignments = getLeavesByActingOfficer(currentUser.name, currentUser.division, currentUser.role);
 
     const pendingConfirmations = myAssignments.filter(
         (l) => l.status === "Pending Acting Officer"
@@ -49,6 +52,19 @@ function ActingApprovals() {
     const handledAssignments = myAssignments.filter(
         (l) => l.status !== "Pending Acting Officer"
     );
+
+    const renderActingDecision = (item) => {
+        const declinedBy = item.declinedBy || item.declined_by || "";
+        const reason = item.declineReason || item.decline_reason;
+        const confirmed = item.actingOfficerConfirmed || item.acting_officer_confirmed;
+        if (String(declinedBy).toLowerCase() === "acting officer") {
+            return `Declined by Acting Officer${reason ? `: ${reason}` : ""}`;
+        }
+        if (confirmed || (item.status === "Pending" && item.actingOfficer)) {
+            return "Approved by Acting Officer; forwarded to the next configured approver.";
+        }
+        return "Awaiting Acting Officer decision.";
+    };
 
     const askConfirm = (leave) => setConfirmModal({ open: true, leave, action: "confirm" });
     const askDecline = (leave) => setConfirmModal({ open: true, leave, action: "decline" });
@@ -61,29 +77,8 @@ function ActingApprovals() {
         try {
             await confirmActingOfficer(leave.id, "confirm");
 
-            setToast(`Confirmed ${leave.employee}'s leave. Sent to admin.`);
+      setToast(`Approved ${leave.employee}'s leave. Forwarded to the configured approver.`);
             setTimeout(() => setToast(""), 3500);
-
-            addNotification(
-                `Leave application: ${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by Acting Officer (${currentUser.name}) and is now awaiting your approval.`,
-                "leave_application",
-                "admin",
-                leave.division
-            );
-
-            addNotification(
-                `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by your Acting Officer (${currentUser.name}) and forwarded to Admin for approval.`,
-                "status_update",
-                leave.employee,
-                leave.division
-            );
-
-            addNotification(
-                `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been confirmed by Acting Officer (${currentUser.name}) and is now awaiting Admin approval.`,
-                "leave_application",
-                "hod",
-                leave.division
-            );
 
         } catch (error) {
             console.error("Error confirming leave:", error);
@@ -104,29 +99,6 @@ function ActingApprovals() {
 
             setToast(` Declined ${leave.employee}'s leave.`);
             setTimeout(() => setToast(""), 3500);
-
-            const reasonText = reason ? ` Reason: ${reason}` : "";
-
-            addNotification(
-                `Your ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by your Acting Officer (${currentUser.name}).${reasonText}`,
-                "status_update",
-                leave.employee,
-                leave.division
-            );
-
-            addNotification(
-                `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by Acting Officer (${currentUser.name}).${reasonText}`,
-                "leave_application",
-                "admin",
-                leave.division
-            );
-
-            addNotification(
-                `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by Acting Officer (${currentUser.name}).${reasonText}`,
-                "leave_application",
-                "hod",
-                leave.division
-            );
 
         } catch (error) {
             console.error("Error declining leave:", error);
@@ -279,7 +251,7 @@ function ActingApprovals() {
                         className="px-3 py-1 bg-green-500 text-white text-md font-medium rounded-lg hover:bg-green-700"
                         disabled={loading}
                     >
-                        Confirm
+                        Approve
                     </button>
                     <button
                         onClick={() => askDecline(item)}
@@ -320,6 +292,15 @@ function ActingApprovals() {
             key: "status",
             label: "Status",
             render: (item) => renderHistoryStatus(item),
+        },
+        {
+            key: "actingDecision",
+            label: "Acting Officer Decision",
+            render: (item) => (
+                <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-normal">
+                    {renderActingDecision(item)}
+                </span>
+            ),
         },
         {
             key: "actions",
@@ -386,7 +367,7 @@ function ActingApprovals() {
                         disabled={loading}
                         className="px-2 py-1 bg-green-500 text-white text-[10px] font-medium rounded hover:bg-green-700 disabled:opacity-60"
                     >
-                        Confirm
+                        Approve
                     </button>
                     <button
                         onClick={() => askDecline(item)}
@@ -578,7 +559,7 @@ function ActingApprovals() {
                 message={
                     confirmModal.leave
                         ? confirmModal.action === "confirm"
-                            ? `You are about to CONFIRM ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). It will be forwarded to Admin.`
+              ? `You are about to APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). It will be forwarded according to the configured approval hierarchy.`
                             : `You are about to DECLINE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
                         : ""
                 }

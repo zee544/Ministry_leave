@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Eye,
@@ -12,7 +12,6 @@ import {
 import HODSidebar from "../Components/HODSidebar";
 import HODHeader from "../Components/HODHeader";
 import DataTable from "../Components/DataTable";
-import { useNotifications } from "../hooks/NotificationContext.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
 import Reports from "../Admin/reports.jsx";
@@ -21,12 +20,12 @@ import HODSettings from "./HODSettings.jsx";
 import ConfirmModal from "../Components/ConfirmModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
+import ActingApprovals from "../User/ActingApprovals.jsx";
 
 
 function HODDashboard() {
-  const { leaves, hodApprove, fetchLeaves } = useLeaves();
+  const { leaves, isLoading, hodApprove } = useLeaves();
   const { currentUser } = useUser();
-  const { addNotification, fetchNotifications, notifications } = useNotifications();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") || "dashboard";
@@ -51,27 +50,6 @@ function HODDashboard() {
   const [approvalLoading, setApprovalLoading] = useState(false);
   const approvalInFlight = useRef(false);
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (fetchLeaves) await fetchLeaves();
-      if (fetchNotifications) await fetchNotifications();
-    };
-    loadData();
-  }, [fetchLeaves, fetchNotifications]);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      if (fetchLeaves) fetchLeaves();
-      if (fetchNotifications) fetchNotifications();
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [fetchLeaves, fetchNotifications]);
-
-  useEffect(() => {
-    if (notifications.length > 0 && fetchLeaves) fetchLeaves();
-  }, [notifications.length, fetchLeaves]);
-
   const userDivision = currentUser?.division || "Administration";
   const myId = Number(currentUser?.id || 0);
   const myEmail = (currentUser?.email || "").toLowerCase();
@@ -93,6 +71,12 @@ function HODDashboard() {
       leaveDiv === userDiv ||
       leaveDiv.replace("istration", "") === userDiv.replace("istration", "")
     );
+  });
+
+  const myLeaves = leaves.filter((l) => {
+    const applicantId = Number(l.applicantUserId ?? l.applicant_user_id);
+    const applicantRole = l.applicantRole ?? l.applicant_role;
+    return applicantRole === "hod" && applicantId === myId;
   });
 
   const pendingHODApproval = divisionLeaves.filter((l) => {
@@ -166,66 +150,12 @@ function HODDashboard() {
   const handleApprove = async (leave) => {
     await hodApprove(leave.id, "approve");
 
-    addNotification(
-      `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been APPROVED by the Head of Division.`,
-      "status_update",
-      leave.employee,
-      leave.division,
-      "/userdashboard?tab=myleaves"
-    );
-
-    if (leave.actingOfficer) {
-      addNotification(
-        `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been APPROVED by the Head of Division.`,
-        "status_update",
-        leave.actingOfficer,
-        leave.division,
-        "/userdashboard?tab=actingapprovals"
-      );
-    }
-
-    addNotification(
-      `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) has been APPROVED by the Head of Division.`,
-      "leave_application",
-      "admin",
-      leave.division,
-      "/Admindashboard?tab=leaves"
-    );
-
     setSelectedLeave({ ...leave, status: "Approved", approverRole: "hod" });
     setShowPrintModal(true);
   };
 
   const handleDecline = async (leave, reason) => {
     await hodApprove(leave.id, "decline", { reason: reason || null });
-
-    const reasonText = reason ? ` Reason: ${reason}` : "";
-
-    addNotification(
-      `Your ${leave.type} leave (${leave.from} to ${leave.to}) has been DECLINED by the Head of Division.${reasonText}`,
-      "status_update",
-      leave.employee,
-      leave.division,
-      "/userdashboard?tab=myleaves"
-    );
-
-    if (leave.actingOfficer) {
-      addNotification(
-        `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by the Head of Division.${reasonText}`,
-        "status_update",
-        leave.actingOfficer,
-        leave.division,
-        "/userdashboard?tab=actingapprovals"
-      );
-    }
-
-    addNotification(
-      `${leave.employee}'s ${leave.type} leave (${leave.from} to ${leave.to}) was DECLINED by the Head of Division.${reasonText}`,
-      "leave_application",
-      "admin",
-      leave.division,
-      "/Admindashboard?tab=leaves"
-    );
 
     setSelectedLeave({ ...leave, status: "Declined" });
     setShowPrintModal(true);
@@ -737,19 +667,23 @@ function HODDashboard() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                   <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
-                    {userDivision} Division Leave Requests
+                    My Leave Requests
                   </h3>
                   <span className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-semibold px-2.5 py-1 rounded-full">
-                    {userDivision} Division
+                    {myLeaves.length} request{myLeaves.length === 1 ? "" : "s"}
                   </span>
                 </div>
                 <div className="p-4">
                   <DataTable
                     columns={allLeavesColumns}
-                    data={divisionLeaves}
+                    data={myLeaves}
                     mobileRender={allLeavesMobileRender}
                     options={{ searchable: false, showFilters: false, itemsPerPage: 5 }}
-                    label="all leaves"
+                    label="my leave requests"
+                    emptyState={{
+                      title: "No leave requests",
+                      message: "You have not submitted any leave requests yet.",
+                    }}
                   />
                 </div>
               </div>
@@ -779,7 +713,12 @@ function HODDashboard() {
                   </p>
                 </div>
                 <div className="p-4">
-                  {pendingHODApproval.length === 0 ? (
+                  {isLoading ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                      Loading leave requests...
+                    </div>
+                  ) : pendingHODApproval.length === 0 ? (
                     <div className="text-center py-8 text-gray-400 dark:text-gray-500">
                       <p className="text-sm font-medium">No pending approvals</p>
                       <p className="text-xs mt-1">
@@ -852,6 +791,12 @@ function HODDashboard() {
           {activeTab === "my-leaves" && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
               <Myleaves />
+            </div>
+          )}
+
+          {activeTab === "acting-approvals" && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6 xl:p-8">
+              <ActingApprovals />
             </div>
           )}
 

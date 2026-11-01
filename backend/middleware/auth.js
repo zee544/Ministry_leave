@@ -17,6 +17,9 @@ const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'leave_sys_123');
+    // Older sessions may contain role values with different casing. Normalize
+    // the signed claim once so role guards do not reject valid Admin/HOD users.
+    if (decoded.role) decoded.role = String(decoded.role).trim().toLowerCase();
     req.user = decoded;
     next();
   } catch (error) {
