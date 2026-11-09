@@ -26,7 +26,12 @@ import HODEmployees from "./HODEmployees.jsx";
 
 
 function HODDashboard() {
-  const { leaves, isLoading, hodApprove } = useLeaves();
+  const {
+    leaves,
+    isLoading,
+    hodApprove,
+    confirmActingOfficer,
+  } = useLeaves();
   const { currentUser } = useUser();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -48,6 +53,7 @@ function HODDashboard() {
     open: false,
     leave: null,
     action: "approve",
+    flow: "approval",
   });
   const [approvalLoading, setApprovalLoading] = useState(false);
   const approvalInFlight = useRef(false);
@@ -91,7 +97,15 @@ function HODDashboard() {
     );
 
     if (role === "employee") {
-      if (adminApprovalRequired && l.status !== "Admin Approved") return false;
+      const actingConfirmed = Boolean(
+        l.actingOfficerConfirmed ?? l.acting_officer_confirmed
+      );
+      if (!actingConfirmed) return false;
+      if (
+        adminApprovalRequired &&
+        l.status !== "Admin Approved" &&
+        l.status !== "Pending"
+      ) return false;
       if (!adminApprovalRequired && l.status !== "Pending") return false;
     }
 
@@ -153,9 +167,16 @@ function HODDashboard() {
     },
   ];
 
-  const askApprove = (leave) => setConfirmModal({ open: true, leave, action: "approve" });
-  const askDecline = (leave) => setConfirmModal({ open: true, leave, action: "decline" });
-  const closeModal = () => setConfirmModal({ open: false, leave: null, action: "approve" });
+  const askApprove = (leave) => setConfirmModal({ open: true, leave, action: "approve", flow: "approval" });
+  const askDecline = (leave) => setConfirmModal({ open: true, leave, action: "decline", flow: "approval" });
+  const askQuickAction = (leave, action, flow) =>
+    setConfirmModal({ open: true, leave, action, flow });
+  const closeModal = () => setConfirmModal({
+    open: false,
+    leave: null,
+    action: "approve",
+    flow: "approval",
+  });
 
   const handleApprove = async (leave) => {
     await hodApprove(leave.id, "approve");
@@ -172,16 +193,26 @@ function HODDashboard() {
   };
 
   const processAction = async (reason) => {
-    const { leave, action } = confirmModal;
+    const { leave, action, flow } = confirmModal;
     if (!leave || approvalInFlight.current) return;
 
     approvalInFlight.current = true;
     setApprovalLoading(true);
     try {
-      if (action === "approve") {
-        await handleApprove(leave);
+      if (flow === "acting") {
+        await confirmActingOfficer(
+          leave.id,
+          action === "confirm" ? "confirm" : "decline",
+          reason
+        );
+      } else if (flow === "quick") {
+        await hodApprove(leave.id, action, { reason: reason || null });
       } else {
-        await handleDecline(leave, reason);
+        if (action === "approve") {
+          await handleApprove(leave);
+        } else {
+          await handleDecline(leave, reason);
+        }
       }
       closeModal();
     } catch (error) {
@@ -638,7 +669,23 @@ function HODDashboard() {
                 </div>
               </div>
 
-              <ActingQuickAccess onReview={() => setActiveTab("acting-approvals")} />
+              <ActingQuickAccess
+                onReview={() => setActiveTab("acting-approvals")}
+                pendingEmployeeLeaves={pendingHODApproval.filter(
+                  (leave) => (leave.applicantRole ?? leave.applicant_role) === "employee"
+                )}
+                onViewLeave={(leave) => {
+                  setSelectedLeave(leave);
+                  setShowPrintModal(true);
+                }}
+                onActingAction={(leave, action) =>
+                  askQuickAction(leave, action, "acting")
+                }
+                onEmployeeAction={(leave, action) =>
+                  askQuickAction(leave, action, "quick")
+                }
+                disabled={approvalLoading}
+              />
 
               {pendingHODApproval.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-purple-200 dark:border-purple-800 overflow-hidden mb-6 lg:mb-8">
@@ -845,17 +892,23 @@ function HODDashboard() {
         onClose={closeModal}
         onConfirm={processAction}
         loading={approvalLoading}
-        tone={confirmModal.action === "approve" ? "approve" : "decline"}
+        tone={confirmModal.action === "decline" ? "decline" : "approve"}
         requireReason={confirmModal.action === "decline"}
-        title={confirmModal.action === "approve"
-          ? "Approve this leave request?"
-          : "Decline this leave request?"}
+        title={confirmModal.action === "confirm"
+          ? "Confirm Acting Officer assignment?"
+          : confirmModal.action === "approve"
+            ? "Approve this leave request?"
+            : "Decline this leave request?"}
         message={confirmModal.leave
-          ? confirmModal.action === "approve"
-            ? `You are about to APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). This will finalize the leave.`
-            : `You are about to DECLINE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
+          ? confirmModal.action === "confirm"
+            ? `You are confirming that you will act for ${confirmModal.leave.employee} on this ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
+            : confirmModal.action === "approve"
+              ? `You are about to APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). This will finalize the leave.`
+              : `You are about to DECLINE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
           : ""}
-        confirmLabel={confirmModal.action === "approve" ? "Yes, Approve" : "Yes, Decline"}
+        confirmLabel={confirmModal.action === "confirm"
+          ? "Yes, Confirm"
+          : confirmModal.action === "approve" ? "Yes, Approve" : "Yes, Decline"}
         cancelLabel="Cancel"
         reasonLabel="Reason for declining (optional)"
         reasonPlaceholder="Explain why you are declining this leave..."

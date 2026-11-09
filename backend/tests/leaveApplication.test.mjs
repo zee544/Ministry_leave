@@ -525,7 +525,8 @@ describe('leave application endpoint', () => {
       ([sql]) => sql.includes('UPDATE leaves')
     );
     expect(updateSql).toContain('acting_officer_signature = COALESCE(?, acting_officer_signature)');
-    expect(updateValues[5]).toBe('acting-signature');
+    expect(updateSql).toContain("IF(applicant_role = 'employee', ?, admin_approval_required)");
+    expect(updateValues[6]).toBe('acting-signature');
   });
 
   it('persists an Acting Officer decline reason for later display', async () => {
@@ -715,6 +716,7 @@ describe('leave application endpoint', () => {
           applicantUserId: 17,
           applicantRole: 'employee',
           adminApprovalRequired: true,
+          actingOfficerConfirmed: true,
           appliedBy: 'Test Employee',
           employee: 'Test Employee',
           division: 'Accounts',
@@ -747,12 +749,80 @@ describe('leave application endpoint', () => {
     });
     expect(query.mock.calls.filter(([sql]) => sql.includes('UPDATE leaves'))).toHaveLength(1);
     const [updateSql] = query.mock.calls.find(([sql]) => sql.includes('UPDATE leaves'));
-    expect(updateSql).toContain('WHERE id = ? AND status = ?');
+    expect(updateSql).toContain("acting_officer_confirmed = 1 AND status IN ('Pending', 'Admin Approved')");
     expect(updateSql).not.toContain('admin_signature =');
     expect(global.setImmediate).toHaveBeenCalledTimes(1);
   });
 
-  it('prevents HOD approval before Admin pre-approval when the division has an Admin', async () => {
+  it('allows the HOD to finalize an Acting-confirmed employee leave while Admin approval is pending', async () => {
+    vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT email, division')) {
+        return [[{ email: 'hod@example.test', division: 'Accounts' }], []];
+      }
+      if (sql.includes('SELECT id, status, applicant_user_id')) {
+        return [[{
+          id: 256,
+          status: 'Pending',
+          applicantUserId: 17,
+          applicantRole: 'employee',
+          adminApprovalRequired: true,
+          actingOfficerConfirmed: true,
+          appliedBy: 'Test Employee',
+          division: 'Accounts',
+          target_approver_id: null,
+          target_approver_role: 'hod',
+          target_approver_email: null,
+        }], []];
+      }
+      if (sql.includes('UPDATE leaves')) return [{ affectedRows: 1 }, []];
+      return [[], []];
+    });
+
+    const response = await put('/api/admin/leaves/256/hod-approve', {
+      action: 'approve',
+    }, hodToken());
+
+    expect(response.status).toBe(200);
+    const [updateSql] = query.mock.calls.find(([sql]) => sql.includes('UPDATE leaves'));
+    expect(updateSql).toContain("acting_officer_confirmed = 1 AND status IN ('Pending', 'Admin Approved')");
+  });
+
+  it('allows the HOD to approve an Acting-confirmed leave when the division has no Admin', async () => {
+    vi.spyOn(global, 'setImmediate').mockImplementation(() => 0);
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT email, division')) {
+        return [[{ email: 'hod@example.test', division: 'Accounts' }], []];
+      }
+      if (sql.includes('SELECT id, status, applicant_user_id')) {
+        return [[{
+          id: 257,
+          status: 'Pending',
+          applicantUserId: 17,
+          applicantRole: 'employee',
+          adminApprovalRequired: false,
+          actingOfficerConfirmed: true,
+          appliedBy: 'Test Employee',
+          division: 'Accounts',
+          target_approver_id: null,
+          target_approver_role: 'hod',
+          target_approver_email: null,
+        }], []];
+      }
+      if (sql.includes('UPDATE leaves')) return [{ affectedRows: 1 }, []];
+      return [[], []];
+    });
+
+    const response = await put('/api/admin/leaves/257/hod-approve', {
+      action: 'approve',
+    }, hodToken());
+
+    expect(response.status).toBe(200);
+    const [updateSql] = query.mock.calls.find(([sql]) => sql.includes('UPDATE leaves'));
+    expect(updateSql).toContain("acting_officer_confirmed = 1 AND status = 'Pending'");
+  });
+
+  it('prevents HOD approval until the Acting Officer has confirmed the employee leave', async () => {
     const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
       if (sql.includes('SELECT email, division')) {
         return [[{ email: 'hod@example.test', division: 'Accounts' }], []];
@@ -764,6 +834,7 @@ describe('leave application endpoint', () => {
           applicantUserId: 17,
           applicantRole: 'employee',
           adminApprovalRequired: true,
+          actingOfficerConfirmed: false,
           appliedBy: 'Test Employee',
           division: 'Accounts',
           target_approver_id: null,
@@ -779,8 +850,38 @@ describe('leave application endpoint', () => {
     }, hodToken());
 
     expect(response.status).toBe(409);
-    expect(response.body.message).toContain('must be approved by Admin');
+    expect(response.body.message).toContain('confirmed by the Acting Officer');
     expect(query.mock.calls.some(([sql]) => sql.includes('UPDATE leaves'))).toBe(false);
+  });
+
+  it('allows Secretaries to load dynamic HOD candidates in Approval Settings', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id, name, email, NULL AS division FROM secretary')) {
+        return [[{ id: 81, name: 'Ministry Secretary', email: 'secretary@example.test', division: null }], []];
+      }
+      if (sql.includes("SELECT id, name, email, designation, division, 'hod' AS role")) {
+        return [[{
+          id: 71,
+          name: 'Accounts HOD',
+          email: 'hod@example.test',
+          designation: 'Head of Department',
+          division: 'Accounts',
+          role: 'hod',
+        }], []];
+      }
+      if (sql.includes('FROM approval_rules') && sql.includes('approver_id AS approverId')) {
+        return [[], []];
+      }
+      return [[], []];
+    });
+
+    const response = await get('/api/admin/approval-settings', secretaryToken());
+
+    expect(response.status).toBe(200);
+    expect(response.body.candidates).toMatchObject([
+      { id: 71, role: 'hod', email: 'hod@example.test' },
+    ]);
+    expect(query.mock.calls[0][0]).toContain('NULL AS division');
   });
 
   it('does not allow an admin to decide an admin-originated leave request', async () => {

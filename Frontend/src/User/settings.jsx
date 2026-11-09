@@ -25,7 +25,7 @@ function Settings() {
       const token = localStorage.getItem("token");
       if (!token) {
         showToast("You are not logged in", "error");
-        return;
+        return false;
       }
 
       const res = await fetch(apiUrl("/api/auth/signature"), {
@@ -37,16 +37,19 @@ function Settings() {
         body: JSON.stringify({ signature: signature || null }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
         showToast("Signature saved successfully!", "success");
+        return true;
       } else {
-        showToast(data.message || "Failed to save signature", "error");
+        showToast(data.message || `Failed to save signature (${res.status})`, "error");
+        return false;
       }
     } catch (err) {
       console.error("Save signature error:", err);
-      showToast("Network error. Please try again.", "error");
+      showToast(`Network error while saving signature: ${err.message || "Please try again."}`, "error");
+      return false;
     } finally {
       setSavingSignature(false);
     }
@@ -194,9 +197,7 @@ function Settings() {
               <SignatureUpload
                 signatureKey={currentUser.name}
                 label="Signature"
-                onSignatureChange={
-                  currentUser?.role === "secretary" ? handleSaveSignature : undefined
-                }
+                onSignatureChange={handleSaveSignature}
               />
               <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3 flex items-start gap-2">
                 <span>
@@ -209,7 +210,7 @@ function Settings() {
 
             <div className="flex justify-end mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-gray-100 dark:border-gray-700">
               <button
-                onClick={handleSaveSignature}
+                onClick={() => handleSaveSignature()}
                 disabled={savingSignature}
                 className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
               >

@@ -6,6 +6,7 @@ import {
   CalendarPlus,
   FileText,
   Settings,
+  ShieldCheck,
   LogOut,
   Anchor,
   X,
@@ -21,6 +22,7 @@ function SecretarySidebar({ activeTab, onTabChange, isOpen, onClose }) {
     { key: "apply-leave", label: "Apply for Leave",    icon: CalendarPlus    },
     { key: "my-leaves",   label: "My Leaves",          icon: ClipboardList   },
     { key: "settings",    label: "Settings",           icon: Settings        },
+    { key: "approval-settings", label: "Approval Settings", icon: ShieldCheck },
   ];
 
   const handleLogout = () => {

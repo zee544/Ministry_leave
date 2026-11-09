@@ -12,6 +12,7 @@ function SignatureUpload({
   const { getSignature, saveSignature, removeSignature } = useSignatures();
   const [preview, setPreview] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef(null);
 
   const existing = getSignature(signatureKey);
@@ -104,6 +105,8 @@ function SignatureUpload({
     }
 
     try {
+      setSyncing(true);
+      setUploadError("");
       const compressedDataUrl = await compressImage(file);
       console.log(
         `[Signature] Original: ${(file.size / 1024).toFixed(1)}KB → Compressed: ${(
@@ -111,30 +114,43 @@ function SignatureUpload({
         ).toFixed(1)}KB`
       );
 
+      if (onSignatureChange) {
+        const saved = await onSignatureChange(compressedDataUrl);
+        if (saved === false) {
+          throw new Error("The signature was not saved. Please try again.");
+        }
+      }
+
       saveSignature(signatureKey, compressedDataUrl);
       setPreview(compressedDataUrl);
       if (onErrorChange) onErrorChange(false);
-      if (onSignatureChange) {
-        Promise.resolve(onSignatureChange(compressedDataUrl)).catch((err) =>
-          console.error("Failed to save uploaded signature:", err)
-        );
-      }
     } catch (err) {
       console.error("Failed to process image:", err);
-      alert("Failed to process image. Please try a different image.");
+      setUploadError(err.message || "Failed to save the signature. Please try again.");
     } finally {
+      setSyncing(false);
       e.target.value = "";
     }
   };
 
-  const handleRemove = () => {
-    removeSignature(signatureKey);
-    setPreview(null);
-    if (onErrorChange) onErrorChange(true);
-    if (onSignatureChange) {
-      Promise.resolve(onSignatureChange(null)).catch((err) =>
-        console.error("Failed to remove saved signature:", err)
-      );
+  const handleRemove = async () => {
+    setSyncing(true);
+    setUploadError("");
+    try {
+      if (onSignatureChange) {
+        const saved = await onSignatureChange(null);
+        if (saved === false) {
+          throw new Error("The signature could not be removed. Please try again.");
+        }
+      }
+      removeSignature(signatureKey);
+      setPreview(null);
+      if (onErrorChange) onErrorChange(true);
+    } catch (err) {
+      console.error("Failed to remove saved signature:", err);
+      setUploadError(err.message || "Failed to remove the signature. Please try again.");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -156,6 +172,7 @@ function SignatureUpload({
             <button
               type="button"
               onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              disabled={syncing}
               className="px-3 py-1.5 text-xs bg-teal-500 text-white rounded-lg hover:bg-teal-700 transition-colors"
             >
               Replace
@@ -163,6 +180,7 @@ function SignatureUpload({
             <button
               type="button"
               onClick={handleRemove}
+              disabled={syncing}
               className="px-3 py-1.5 text-xs bg-[#E41B17] text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               Remove
@@ -173,11 +191,17 @@ function SignatureUpload({
         <button
           type="button"
           onClick={() => fileInputRef.current && fileInputRef.current.click()}
+          disabled={syncing}
           className="w-full py-6 flex flex-col items-center justify-center text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         >
           <span className="text-2xl mb-1">✍️</span>
           <span className="text-xs">Click to upload {label.toLowerCase()}</span>
         </button>
+      )}
+      {uploadError && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400" role="alert">
+          {uploadError}
+        </p>
       )}
 
       <input
@@ -186,6 +210,7 @@ function SignatureUpload({
         accept="image/*"
         onChange={handleFileChange}
         className="hidden"
+        disabled={syncing}
       />
 
       {required && showError && !existing && !preview && (

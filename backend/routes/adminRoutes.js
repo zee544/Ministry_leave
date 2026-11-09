@@ -1223,17 +1223,16 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
     const finalDeclineReason = (action === 'decline' && reason) ? reason.trim() : null;
 
     let nextApproverEmail = leaveData.target_approver_email;
-    const adminApprovalRequired = leaveData.applicant_role === 'employee' &&
-      Boolean(leaveData.admin_approval_required);
-    const [divisionAdmins] = adminApprovalRequired
+    const [divisionAdmins] = leaveData.applicant_role === 'employee'
       ? await pool.query(
         `SELECT id, email FROM admins WHERE LOWER(TRIM(division)) = LOWER(TRIM(?))`,
         [leaveData.division]
       )
       : [[]];
+    const adminApprovalRequired = leaveData.applicant_role === 'employee' &&
+      divisionAdmins.length > 0;
     if (
       action === 'confirm' &&
-      !adminApprovalRequired &&
       leaveData.target_approver_id &&
       leaveData.target_approver_role
     ) {
@@ -1256,10 +1255,20 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
            acting_officer_confirmed = ?,
            declined_by = ?,
            decline_reason = ?,
+           admin_approval_required = IF(applicant_role = 'employee', ?, admin_approval_required),
            target_approver_email = COALESCE(?, target_approver_email),
            acting_officer_signature = COALESCE(?, acting_officer_signature)
        WHERE id = ? AND status = 'Pending Acting Officer'`,
-      [newStatus, confirmed, declinedBy, finalDeclineReason, nextApproverEmail, actingOfficerSignature, leaveId]
+      [
+        newStatus,
+        confirmed,
+        declinedBy,
+        finalDeclineReason,
+        adminApprovalRequired ? 1 : 0,
+        nextApproverEmail,
+        actingOfficerSignature,
+        leaveId,
+      ]
     );
 
     if (result.affectedRows === 0) {
@@ -1283,10 +1292,39 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
         ? `${leaveData.employee}'s leave request was confirmed by Acting Officer ${actingOfficer}.`
         : `${leaveData.employee}'s leave request was declined by Acting Officer ${actingOfficer}.${finalDeclineReason ? ` Reason: ${finalDeclineReason}` : ''}`
     ).catch((error) => console.warn('[Notifications] Acting Officer applicant notification failed:', error.message));
+    const emailLeave = {
+      employee: leaveData.employee,
+      division: leaveData.division,
+      type: leaveData.type,
+      from: leaveData.from_date?.toISOString?.().split('T')[0] || leaveData.from_date,
+      to: leaveData.to_date?.toISOString?.().split('T')[0] || leaveData.to_date,
+      noOfDays: leaveData.no_of_days,
+      actingOfficer: actingOfficer,
+      reason: leaveData.reason,
+      applicantUserId: leaveData.applicant_user_id,
+      applicantRole: leaveData.applicant_role,
+      actingOfficerUserId: leaveData.acting_officer_user_id,
+      actingOfficerRole: leaveData.acting_officer_role,
+    };
+
     if (action === 'confirm' && adminApprovalRequired) {
-      const approvalMessage = `${leaveData.employee}'s leave request is now awaiting Admin approval after Acting Officer confirmation.`;
-      void notifyDivisionAdmins(leaveData.division, approvalMessage)
+      const adminMessage = `${leaveData.employee}'s leave request is awaiting your approval after Acting Officer confirmation.`;
+      void notifyDivisionAdmins(leaveData.division, adminMessage)
         .catch((error) => console.warn('[Notifications] Division Admin approval notification failed:', error.message));
+      const hodMessage = `${leaveData.employee}'s leave request is awaiting HOD approval after Acting Officer confirmation.`;
+      if (leaveData.target_approver_role === 'hod' &&
+          (leaveData.target_approver_id || nextApproverEmail)) {
+        void notifyApprovalTarget({
+          target_approver_role: 'hod',
+          target_approver_id: leaveData.target_approver_id,
+          target_approver_email: nextApproverEmail,
+          division: leaveData.division,
+        }, hodMessage)
+          .catch((error) => console.warn('[Notifications] Target HOD approval notification failed:', error.message));
+      } else {
+        void notifyDivisionHods(leaveData.division, hodMessage)
+          .catch((error) => console.warn('[Notifications] Division HOD approval notification failed:', error.message));
+      }
       divisionAdmins.forEach((admin) => {
         if (admin.email) {
           sendEmailNotificationInBackground(
@@ -1307,6 +1345,29 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
           );
         }
       });
+      if (leaveData.target_approver_role === 'hod' && nextApproverEmail) {
+        sendEmailNotificationInBackground(
+          () => sendApprovalRequestEmail({
+            leave: {
+              employee: leaveData.employee,
+              division: leaveData.division,
+              type: leaveData.type,
+              from: leaveData.from_date?.toISOString?.().split('T')[0] || leaveData.from_date,
+              to: leaveData.to_date?.toISOString?.().split('T')[0] || leaveData.to_date,
+              noOfDays: leaveData.no_of_days,
+              reason: leaveData.reason,
+            },
+            approverEmail: nextApproverEmail,
+            approverRole: 'hod',
+          }),
+          'HOD approval request'
+        );
+      } else {
+        sendEmailNotificationInBackground(
+          () => sendHodAwaitingFinalApprovalEmail(emailLeave),
+          'HOD final approval request'
+        );
+      }
     } else if (action === 'confirm' && leaveData.target_approver_role) {
       const approvalMessage =
         `${leaveData.employee}'s leave request is now awaiting your approval after Acting Officer confirmation.`;
@@ -1328,21 +1389,6 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
           .catch((error) => console.warn('[Notifications] Approval target notification failed:', error.message));
       }
     }
-
-    const emailLeave = {
-      employee: leaveData.employee,
-      division: leaveData.division,
-      type: leaveData.type,
-      from: leaveData.from_date?.toISOString?.().split('T')[0] || leaveData.from_date,
-      to: leaveData.to_date?.toISOString?.().split('T')[0] || leaveData.to_date,
-      noOfDays: leaveData.no_of_days,
-      actingOfficer: actingOfficer,
-      reason: leaveData.reason,
-      applicantUserId: leaveData.applicant_user_id,
-      applicantRole: leaveData.applicant_role,
-      actingOfficerUserId: leaveData.acting_officer_user_id,
-      actingOfficerRole: leaveData.acting_officer_role,
-    };
 
     if (action === 'confirm') {
       if (!adminApprovalRequired && nextApproverEmail) {
@@ -1610,6 +1656,7 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
                 applicant_role as applicantRole, applied_by as appliedBy,
                 employee, division, type, target_approver_id, target_approver_role, target_approver_email,
                 admin_approval_required AS adminApprovalRequired,
+                acting_officer_confirmed AS actingOfficerConfirmed,
                 DATE_FORMAT(from_date, '%Y-%m-%d') as \`from\`,
                 DATE_FORMAT(to_date, '%Y-%m-%d') as \`to\`,
                 no_of_days as noOfDays, acting_officer as actingOfficer,
@@ -1670,15 +1717,20 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
     const currentStatus = leave.status;
     const adminApprovalRequired = leave.applicantRole === 'employee' &&
       Boolean(leave.adminApprovalRequired);
-    const requiredStatus = adminApprovalRequired ? 'Admin Approved' : 'Pending';
+    const actingOfficerConfirmed = Boolean(leave.actingOfficerConfirmed);
     const validStatus = leave.applicantRole === 'employee'
-      ? currentStatus === requiredStatus
+      ? actingOfficerConfirmed &&
+        (adminApprovalRequired
+          ? ['Pending', 'Admin Approved'].includes(currentStatus)
+          : currentStatus === 'Pending')
       : ['Pending', 'Admin Approved'].includes(currentStatus);
 
     if (!validStatus) {
       return res.status(409).json({
         message: adminApprovalRequired
-          ? 'This employee leave must be approved by Admin before it can be finalized by HOD.'
+          ? 'This employee leave must be confirmed by the Acting Officer before HOD approval.'
+          : leave.applicantRole === 'employee'
+            ? 'This employee leave must be confirmed by the Acting Officer before HOD approval.'
           : `Cannot process leave with status "${currentStatus}". The leave is not awaiting HOD approval.`,
       });
     }
@@ -1693,7 +1745,9 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
     const approverSignature = profileRows[0]?.signature_image || null;
 
     const statusCondition = leave.applicantRole === 'employee'
-      ? 'status = ?'
+      ? adminApprovalRequired
+        ? "acting_officer_confirmed = 1 AND status IN ('Pending', 'Admin Approved')"
+        : "acting_officer_confirmed = 1 AND status = 'Pending'"
       : "status IN ('Pending', 'Admin Approved')";
     const updateParams = [
       newStatus,
@@ -1705,7 +1759,6 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
       approverSignature,
       leaveId,
     ];
-    if (leave.applicantRole === 'employee') updateParams.push(requiredStatus);
 
     const [result] = await pool.query(
       `UPDATE leaves
@@ -2220,7 +2273,12 @@ router.patch('/hod/employees/:id/status', verifyToken, requireHOD, async (req, r
 // ============================================
 router.use(verifyToken, (req, res, next) => {
   if (req.path === '/approval-settings') {
-    return requireAdminOrHOD(req, res, next);
+    if (!['admin', 'hod', 'secretary'].includes(req.user.role)) {
+      return res.status(403).json({
+        message: 'Access forbidden. Admin, HOD, or Secretary privileges required.',
+      });
+    }
+    return next();
   }
   return requireAdmin(req, res, next);
 });
@@ -2605,12 +2663,27 @@ router.patch('/employees/:id/status', async (req, res) => {
 // ============================================
 // Approval Settings is a user-scoped view over approval_rules. It deliberately
 // uses the existing workflow table so old rules and leave records remain intact.
+const requireApprovalSettingsRole = (req, res, next) => {
+  if (!['admin', 'hod', 'secretary'].includes(req.user.role)) {
+    return res.status(403).json({
+      message: 'Access forbidden. Admin, HOD, or Secretary privileges required.',
+    });
+  }
+  next();
+};
+
 async function getApprovalSettingsContext(role, userId) {
-  const profileTable = role === 'admin' ? 'admins' : 'hod';
-  const [profileRows] = await pool.query(
-    `SELECT id, name, email, division FROM ${profileTable} WHERE id = ? LIMIT 1`,
-    [userId]
-  );
+  const profileTable = { admin: 'admins', hod: 'hod' }[role];
+  if (!profileTable && role !== 'secretary') return null;
+  const [profileRows] = role === 'secretary'
+    ? await pool.query(
+      'SELECT id, name, email, NULL AS division FROM secretary WHERE id = ? LIMIT 1',
+      [userId]
+    )
+    : await pool.query(
+      `SELECT id, name, email, division FROM ${profileTable} WHERE id = ? LIMIT 1`,
+      [userId]
+    );
 
   if (profileRows.length === 0) return null;
 
@@ -2622,6 +2695,15 @@ async function getApprovalSettingsContext(role, userId) {
        WHERE LOWER(TRIM(division)) = LOWER(TRIM(?))
        ORDER BY name ASC, id ASC`,
       [profile.division]
+    );
+    return { profile, candidates: hodRows };
+  }
+
+  if (role === 'secretary') {
+    const [hodRows] = await pool.query(
+      `SELECT id, name, email, designation, division, 'hod' AS role
+       FROM hod
+       ORDER BY division ASC, name ASC, id ASC`
     );
     return { profile, candidates: hodRows };
   }
@@ -2705,7 +2787,7 @@ async function getApprovalSettingsContext(role, userId) {
   return { profile, candidates: uniqueCandidates };
 }
 
-router.get('/approval-settings', verifyToken, requireAdminOrHOD, async (req, res) => {
+router.get('/approval-settings', verifyToken, requireApprovalSettingsRole, async (req, res) => {
   const { role, id } = req.user;
 
   try {
@@ -2748,7 +2830,7 @@ router.get('/approval-settings', verifyToken, requireAdminOrHOD, async (req, res
   }
 });
 
-router.put('/approval-settings', verifyToken, requireAdminOrHOD, async (req, res) => {
+router.put('/approval-settings', verifyToken, requireApprovalSettingsRole, async (req, res) => {
   const { role, id, email: tokenEmail, name: tokenName } = req.user;
   const rawApproverId = req.body?.approverId;
   const requestedApproverRole = req.body?.approverRole || null;

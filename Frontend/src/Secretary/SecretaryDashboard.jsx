@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import SecretaryHeader from "../Components/SecretaryHeader";
 import SecretarySidebar from "../Components/SecretarySidebar";
 import Settings from "../User/settings";
-import { ClipboardList, Clock, CheckCircle, Globe } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle, XCircle } from "lucide-react";
 import DataTable from "../Components/DataTable";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
 import { useUser } from "../hooks/UserContext.jsx";
@@ -11,6 +11,7 @@ import ConfirmModal from "../Components/ConfirmModal.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
+import ApprovalSettings from "../Components/ApprovalSettings.jsx";
 
 function SecretaryDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,6 +47,7 @@ function SecretaryDashboard() {
   const myId = Number(currentUser?.id || 0);
 
   const secretaryEmail = String(currentUser?.email || "").trim().toLowerCase();
+  
   const isAssignedSecretary = (leave) => {
     const role = leave.applicantRole ?? leave.applicant_role;
     const targetRole = leave.targetApproverRole ?? leave.target_approver_role;
@@ -57,26 +59,52 @@ function SecretaryDashboard() {
         ? Number(targetId) === myId
         : Boolean(secretaryEmail && targetEmail === secretaryEmail));
   };
+
   const pendingSecretaryLeaves = rawLeaves.filter(
     (leave) => leave.status === "Pending" && isAssignedSecretary(leave)
   );
 
-  const secretaryHistoryLeaves = rawLeaves.filter((leave) => {
-    if (!isAssignedSecretary(leave) || leave.status === "Pending") return false;
+  const decidedByCurrentSecretary = (leave) => {
     const decidedById = leave.secretaryDecidedById ?? leave.secretary_decided_by_id;
     const approvedById = leave.approvedById ?? leave.approved_by_id;
     const decidedByName = leave.declinedBy ?? leave.declined_by;
-    const processedByCurrentSecretary =
+    return (
       Number(decidedById) === myId ||
       Number(approvedById) === myId ||
-      (!decidedById && !approvedById && decidedByName === currentUser?.name);
-    return processedByCurrentSecretary;
+      (!decidedById && !approvedById && decidedByName === currentUser?.name)
+    );
+  };
+
+  const secretaryApprovedLeaves = rawLeaves.filter(
+    (leave) =>
+      isAssignedSecretary(leave) &&
+      leave.status === "Approved" &&
+      decidedByCurrentSecretary(leave)
+  );
+  
+  const secretaryDeclinedLeaves = rawLeaves.filter(
+    (leave) =>
+      isAssignedSecretary(leave) &&
+      leave.status === "Declined" &&
+      decidedByCurrentSecretary(leave)
+  );
+
+  // ✅ Dashboard එකේ එකම ටේබල් එකේ පෙන්නන්න Pending + Approved + Declined එකතු කිරීම
+  let combinedDashboardLeaves = [
+    ...pendingSecretaryLeaves,
+    ...secretaryApprovedLeaves,
+    ...secretaryDeclinedLeaves,
+  ];
+
+  // ✅ අලුත්ම ලීව් එක මුලට එන විදිහට (Latest First) පේළි පිළිවෙල හැදීම
+  combinedDashboardLeaves.sort((a, b) => {
+    const dateA = new Date(String(a.appliedOn || a.applied_on || "").replace(" ", "T")).getTime();
+    const dateB = new Date(String(b.appliedOn || b.applied_on || "").replace(" ", "T")).getTime();
+    // අගයන් වැඩි එක (අලුත්ම දිනය) මුලට එන ලෙස
+    return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
   });
 
-  // 3. All leaves for overview
   const allLeaves = rawLeaves;
-  const approvedLeaves = rawLeaves.filter((l) => l.status === "Approved");
-  const uniqueDivisions = new Set(rawLeaves.map((l) => l.division).filter(Boolean)).size;
 
   // ============================================================
   // Actions
@@ -101,7 +129,6 @@ function SecretaryDashboard() {
         await secretaryApprove(leave.id, "approve");
         setToast(`✅ Approved ${leave.employee}'s leave.`);
       } else {
-        // ✅ Passes the reason to the backend
         await secretaryApprove(leave.id, "decline", reason);
         setToast(`❌ Declined ${leave.employee}'s leave.`);
       }
@@ -134,16 +161,16 @@ function SecretaryDashboard() {
       color: "bg-yellow-500",
     },
     {
-      label: "Approved",
-      value: approvedLeaves.length,
+      label: "Approved by Secretary",
+      value: secretaryApprovedLeaves.length,
       icon: <CheckCircle className="w-6 h-6 lg:w-8 lg:h-8 text-white" />,
       color: "bg-green-500",
     },
     {
-      label: "Divisions Active",
-      value: uniqueDivisions,
-      icon: <Globe className="w-6 h-6 lg:w-8 lg:h-8 text-white" />,
-      color: "bg-purple-500",
+      label: "Declined by Secretary",
+      value: secretaryDeclinedLeaves.length,
+      icon: <XCircle className="w-6 h-6 lg:w-8 lg:h-8 text-white" />,
+      color: "bg-red-500",
     },
   ];
 
@@ -210,7 +237,6 @@ function SecretaryDashboard() {
       key: "status",
       label: "Status",
       render: (item, { getStatusBadge }) => {
-        // ✅ Custom rendering to show the decline reason inline
         if (item.status === "Declined") {
           const reason = item.declineReason || item.decline_reason;
           return (
@@ -229,28 +255,58 @@ function SecretaryDashboard() {
             </div>
           );
         }
-        // For Approved or Pending, use the default badge
         return getStatusBadge(item.status);
       },
     },
-
   ];
 
-  const historyColumns = [
+  const historyColumns = [...baseColumns];
+
+  // ✅ අලුත් Combined Columns එක (Decision Date අයින් කරලා View බට්න් එක එකතු කරලා)
+  const combinedDashboardColumns = [
     ...baseColumns,
     {
-      key: "secretaryDecidedAt",
-      label: "Decision Date",
-      render: (item) => {
-        const value = item.secretaryDecidedAt || item.secretary_decided_at;
-        if (!value) return "—";
-        const date = new Date(String(value).replace(" ", "T"));
-        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-      },
+      key: "actions",
+      label: "Action",
+      className: "text-right",
+      render: (item) => (
+        <div className="flex items-center justify-end gap-2">
+          {/* හැම ලීව් එකකටම View බට්න් එක පේනවා */}
+          <button
+            onClick={() => {
+              setSelectedLeave(item);
+              setShowPrintModal(true);
+            }}
+            className="px-2.5 py-1 bg-purple-500 text-white text-xs lg:text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+            title="View Application Form"
+          >
+            View
+          </button>
+          
+          {/* Pending නම් විතරක් Approve / Decline බට්න් පේනවා */}
+          {item.status === "Pending" && (
+            <>
+              <button
+                onClick={() => askApprove(item)}
+                className="px-2.5 py-1 bg-green-500 text-white text-xs lg:text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                disabled={loading}
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => askDecline(item)}
+                className="px-2.5 py-1 bg-red-500 text-white text-xs lg:text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+                disabled={loading}
+              >
+                Decline
+              </button>
+            </>
+          )}
+        </div>
+      ),
     },
   ];
 
-  // Pending tab columns (Includes Action buttons)
   const pendingColumns = [
     ...baseColumns,
     {
@@ -265,7 +321,6 @@ function SecretaryDashboard() {
               setShowPrintModal(true);
             }}
             className="px-2.5 py-1 bg-purple-500 text-white text-xs lg:text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
-            title="View Application Form"
           >
             View
           </button>
@@ -303,7 +358,6 @@ function SecretaryDashboard() {
             </p>
           </div>
           <div className="shrink-0">
-            {/* Mobile status badge */}
             {item.status === "Declined" ? (
               <span className="px-2 py-0.5 text-[10px] rounded-md font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
                 ✗ Declined
@@ -323,13 +377,6 @@ function SecretaryDashboard() {
           </span>
         </div>
 
-        {(item.secretaryDecidedAt || item.secretary_decided_at) && (
-          <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            Decision date: {new Date(String(item.secretaryDecidedAt || item.secretary_decided_at).replace(" ", "T")).toLocaleString()}
-          </p>
-        )}
-
-        {/* ✅ Mobile Decline Reason Display */}
         {item.status === "Declined" && reason && (
           <div className="mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-700">
             <p className="text-[10px] text-rose-500 dark:text-rose-400 italic">
@@ -340,6 +387,42 @@ function SecretaryDashboard() {
       </div>
     );
   };
+
+  // ✅ Mobile View එකටත් View බට්න් එක එකතු කළා
+  const combinedDashboardMobileRender = (item, ctx) => (
+    <div>
+      {baseMobileRender(item, ctx)}
+      <div className="px-2.5 pb-2 flex gap-1.5 border-t border-gray-100 dark:border-gray-700 pt-1.5">
+        <button
+          onClick={() => {
+            setSelectedLeave(item);
+            setShowPrintModal(true);
+          }}
+          className="flex-1 py-1.5 bg-purple-500 text-white text-[10px] font-medium rounded-md hover:bg-purple-700"
+        >
+          View
+        </button>
+        {item.status === "Pending" && (
+          <>
+            <button
+              onClick={() => askApprove(item)}
+              className="flex-1 py-1.5 bg-green-500 text-white text-[10px] font-medium rounded-md hover:bg-green-700"
+              disabled={loading}
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => askDecline(item)}
+              className="flex-1 py-1.5 bg-red-500 text-white text-[10px] font-medium rounded-md hover:bg-red-700"
+              disabled={loading}
+            >
+              Decline
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 
   const pendingMobileRender = (item, ctx) => (
     <div>
@@ -433,17 +516,39 @@ function SecretaryDashboard() {
                 ))}
               </div>
 
+              {/* ✅ එකම ටේබල් එකේ Pending, Approved, සහ Declined ලීව්ස් පෙන්වීම */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700">
-                  <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
-                    Recent Leave Records (All Divisions)
-                  </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Read-only overview of leave applications across the ministry
-                  </p>
+                <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
+                      Recent Leave Records
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Overview of your pending, approved, and declined leave requests
+                    </p>
+                  </div>
                 </div>
+                
                 <div className="p-4">
-                  
+                  {combinedDashboardLeaves.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                      <p className="text-sm font-medium">
+                        No leave records found.
+                      </p>
+                    </div>
+                  ) : (
+                    <DataTable
+                      columns={combinedDashboardColumns}
+                      data={combinedDashboardLeaves}
+                      mobileRender={combinedDashboardMobileRender}
+                      options={{
+                        searchable: true,
+                        showFilters: true,
+                        itemsPerPage: 10,
+                      }}
+                      label="leave records"
+                    />
+                  )}
                 </div>
               </div>
             </>
@@ -472,13 +577,10 @@ function SecretaryDashboard() {
           )}
 
           {/* ============================================ */}
-          {/* PENDING APPROVALS TAB (TWO TABLES) */}
+          {/* PENDING APPROVALS TAB */}
           {/* ============================================ */}
           {activeTab === "pending" && (
             <div className="space-y-6">
-              {/* ───────────────────────────────────────────── */}
-              {/* Pending requests assigned to this Secretary by HOD Approval Settings */}
-              {/* ───────────────────────────────────────────── */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
                   <div>
@@ -520,39 +622,65 @@ function SecretaryDashboard() {
                 )}
               </div>
 
-              {/* ───────────────────────────────────────────── */}
-              {/* Secretary decision history */}
-              {/* ───────────────────────────────────────────── */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
                   <div>
                     <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
-                      Approved and Declined HOD Requests
+                      Approved Leaves
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      HOD leave requests you have already processed
+                      Requests already approved by you as authorized approver
                     </p>
                   </div>
                 </div>
 
-                {secretaryHistoryLeaves.length === 0 ? (
+                {secretaryApprovedLeaves.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                    <p className="text-sm font-medium">No history found.</p>
+                    <p className="text-sm font-medium">No approved leaves found.</p>
                     <p className="text-xs mt-1">
-                      Approved and declined HOD requests will remain available here.
+                      Your approved requests will remain available here.
                     </p>
                   </div>
                 ) : (
                   <DataTable
                     columns={historyColumns}
-                    data={secretaryHistoryLeaves}
+                    data={secretaryApprovedLeaves}
                     mobileRender={baseMobileRender}
                     options={{
                       searchable: true,
                       showFilters: true,
                       itemsPerPage: 15,
                     }}
-                    label="Secretary decision history"
+                    label="Secretary-approved leaves"
+                  />
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
+                <div className="mb-4">
+                  <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
+                    Declined Leaves
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Requests you declined, including the recorded reason
+                  </p>
+                </div>
+                {secretaryDeclinedLeaves.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                    <p className="text-sm font-medium">No declined leaves found.</p>
+                    <p className="text-xs mt-1">Your declined requests will remain available here.</p>
+                  </div>
+                ) : (
+                  <DataTable
+                    columns={historyColumns}
+                    data={secretaryDeclinedLeaves}
+                    mobileRender={baseMobileRender}
+                    options={{
+                      searchable: true,
+                      showFilters: true,
+                      itemsPerPage: 15,
+                    }}
+                    label="Secretary-declined leaves"
                   />
                 )}
               </div>
@@ -582,6 +710,10 @@ function SecretaryDashboard() {
               <Settings />
             </div>
           )}
+
+          {activeTab === "approval-settings" && (
+            <ApprovalSettings role="secretary" />
+          )}
         </main>
       </div>
 
@@ -590,7 +722,7 @@ function SecretaryDashboard() {
         onClose={closeModal}
         onConfirm={processAction}
         tone={confirmModal.action === "approve" ? "approve" : "decline"}
-        requireReason={confirmModal.action === "decline"} // ✅ Forces the user to enter a reason when declining
+        requireReason={confirmModal.action === "decline"} 
         loading={loading}
         title={
           confirmModal.action === "approve"

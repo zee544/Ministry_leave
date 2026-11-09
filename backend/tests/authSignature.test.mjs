@@ -52,6 +52,10 @@ const secretaryToken = () => jwt.sign(
   { id: 81, name: 'Ministry Secretary', role: 'secretary' },
   process.env.JWT_SECRET
 );
+const employeeToken = () => jwt.sign(
+  { id: 17, name: 'Test Employee', role: 'employee' },
+  process.env.JWT_SECRET
+);
 
 beforeAll(async () => {
   const app = express();
@@ -94,5 +98,20 @@ describe('Secretary signature profile endpoints', () => {
     expect(pool.query.mock.calls[0][0]).toContain('FROM secretary');
     expect(pool.query.mock.calls[1][0]).toContain('UPDATE secretary');
     expect(pool.query.mock.calls[1][1]).toEqual(['new-signature-image', 81]);
+  });
+
+  it('saves an employee signature in the employee profile', async () => {
+    pool.query.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
+
+    const saved = await request(
+      '/api/auth/signature',
+      'PUT',
+      { signature: 'employee-signature-image' },
+      employeeToken()
+    );
+
+    expect(saved.status).toBe(200);
+    expect(pool.query.mock.calls[0][0]).toContain('UPDATE employees');
+    expect(pool.query.mock.calls[0][1]).toEqual(['employee-signature-image', 17]);
   });
 });
