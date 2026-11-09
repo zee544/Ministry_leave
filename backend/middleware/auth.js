@@ -37,6 +37,20 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireSystemAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'system_admin') {
+    return res.status(403).json({ message: 'Access forbidden. System Admin privileges required.' });
+  }
+  next();
+};
+
+const denySystemAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'system_admin') {
+    return res.status(403).json({ message: 'System Admin accounts have read-only access.' });
+  }
+  next();
+};
+
 /**
  * Middleware to ensure the authenticated user has an HOD role
  */
@@ -87,6 +101,8 @@ const requireExecutiveOfficer = (req, res, next) => {
 module.exports = {
   verifyToken,
   requireAdmin,
+  requireSystemAdmin,
+  denySystemAdmin,
   requireHOD,
   requireAdminOrHOD,
   requireEmployee,

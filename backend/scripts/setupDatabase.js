@@ -2,6 +2,7 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const dotenv = require('dotenv');
 const path = require('path');
+const { ensureSystemAdminTables } = require('../utils/schemaMigrations');
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
@@ -138,6 +139,8 @@ async function setupDatabase() {
         INDEX idx_admin_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    await ensureSystemAdminTables(conn);
 
     await conn.query(`
       CREATE TABLE IF NOT EXISTS hod (

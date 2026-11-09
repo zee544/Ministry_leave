@@ -75,6 +75,7 @@ function App() {
       else if (user.role === "employee") navigate("/userdashboard", { replace: true });
       else if (user.role === "secretary") navigate("/secretarydashboard", { replace: true });
       else if (user.role === "executive_officer") navigate("/executive-officer-dashboard", { replace: true });
+      else if (user.role === "system_admin") navigate("/system-admin-dashboard", { replace: true });
     }
   }, [currentUser, isAuthenticated, navigate]);
 
@@ -147,6 +148,7 @@ function App() {
 
             if (data.user.role === "admin") navigate("/Admindashboard");
             else if (data.user.role === "hod") navigate("/hoddashboard");
+            else if (data.user.role === "system_admin") navigate("/system-admin-dashboard");
             else navigate("/userdashboard");
             return;
           } else if (res.status === 401) {
@@ -375,7 +377,14 @@ function App() {
   Secretary Sign Up
 </Link>
 
-              <p className="text-[10px] text-white/60 mt-2">
+<Link
+  to="/system-admin-setup"
+  className="mt-4 inline-block w-full rounded-lg border border-amber-200/70 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500/35 shadow-sm"
+>
+  System Admin Setup
+</Link>
+
+<p className="text-[10px] text-white/60 mt-2">
                 Employee accounts are provisioned exclusively by their division administrator.
               </p>
             </div>

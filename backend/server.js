@@ -13,6 +13,7 @@ const pool = require('./config/db');
 const {
   ensureSecretaryDecisionColumns,
   ensureExtractedSignatureColumns,
+  ensureSystemAdminTables,
 } = require('./utils/schemaMigrations');
 
 const app = express();
@@ -55,9 +56,10 @@ async function startServer() {
   try {
     await ensureSecretaryDecisionColumns(pool);
     await ensureExtractedSignatureColumns(pool);
+    await ensureSystemAdminTables(pool);
   } catch (error) {
     console.error(
-      `[DB Migration] Failed to prepare leave decision columns (${error.code || 'UNKNOWN'}).`
+      `[DB Migration] Failed to prepare application schema (${error.code || 'UNKNOWN'}).`
     );
     process.exitCode = 1;
     return;

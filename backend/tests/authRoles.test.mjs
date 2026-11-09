@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   requireAdmin,
+  requireSystemAdmin,
+  denySystemAdmin,
   requireHOD,
   requireAdminOrHOD,
   requireEmployee,
@@ -32,6 +34,25 @@ describe('role authorization middleware', () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('allows only System Admin through the System Admin guard', () => {
+    const allowed = runMiddleware(requireSystemAdmin, 'system_admin');
+    const denied = runMiddleware(requireSystemAdmin, 'admin');
+
+    expect(allowed.next).toHaveBeenCalledOnce();
+    expect(allowed.res.status).not.toHaveBeenCalled();
+    expect(denied.res.status).toHaveBeenCalledWith(403);
+    expect(denied.next).not.toHaveBeenCalled();
+  });
+
+  it('denies System Admin from profile and signature write routes', () => {
+    const systemAdmin = runMiddleware(denySystemAdmin, 'system_admin');
+    const divisionAdmin = runMiddleware(denySystemAdmin, 'admin');
+
+    expect(systemAdmin.res.status).toHaveBeenCalledWith(403);
+    expect(systemAdmin.next).not.toHaveBeenCalled();
+    expect(divisionAdmin.next).toHaveBeenCalledOnce();
   });
 
   it.each([

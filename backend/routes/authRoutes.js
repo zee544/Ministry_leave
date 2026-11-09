@@ -4,8 +4,43 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const pool = require('../config/db');
-const { verifyToken, requireAdmin } = require('../middleware/auth');
+const {
+  verifyToken,
+  requireAdmin,
+  requireSystemAdmin,
+  denySystemAdmin,
+} = require('../middleware/auth');
 const { sendEmail, wrapTemplate, getFrontendUrl } = require('../utils/emailService');
+
+function validSystemAdminAccount(account) {
+  return account &&
+    typeof account.username === 'string' &&
+    /^[a-zA-Z0-9._-]{3,80}$/.test(account.username.trim()) &&
+    typeof account.email === 'string' &&
+    account.email.length <= 150 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.email.trim()) &&
+    typeof account.password === 'string' &&
+    account.password.length >= 12 &&
+    account.password.length <= 128 &&
+    /[A-Z]/.test(account.password) &&
+    /[a-z]/.test(account.password) &&
+    /[0-9]/.test(account.password) &&
+    /[!@#$%^&*(),.?":{}|<>]/.test(account.password);
+}
+
+function isValidSystemAdminSetupKey(providedKey, configuredKey) {
+  if (
+    typeof providedKey !== 'string' ||
+    typeof configuredKey !== 'string' ||
+    Buffer.byteLength(configuredKey) < 32
+  ) {
+    return false;
+  }
+  const providedBuffer = Buffer.from(providedKey);
+  const configuredBuffer = Buffer.from(configuredKey);
+  return providedBuffer.length === configuredBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, configuredBuffer);
+}
 
 /**
  * @route   GET /api/auth/divisions-status
@@ -67,6 +102,13 @@ router.post('/admin-signup', async (req, res) => {
 
     const [existingEmail] = await pool.query('SELECT id FROM admins WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     if (existingEmail.length > 0) return res.status(409).json({ message: 'An administrator with this email address is already registered.' });
+    const [existingSystemAdminEmail] = await pool.query(
+      'SELECT account_slot FROM system_admins WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+      [email.trim(), email.trim()]
+    );
+    if (existingSystemAdminEmail.length > 0) {
+      return res.status(409).json({ message: 'This email address is already assigned to a System Admin.' });
+    }
 
     const [existingDivAdmin] = await pool.query('SELECT id, name, email FROM admins WHERE division = ? LIMIT 1', [division]);
     if (existingDivAdmin.length > 0) {
@@ -129,9 +171,14 @@ router.post('/hod-signup', async (req, res) => {
     const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     let existingEmailEO = [];
     let existingEmailSec = [];
+    let existingSystemAdmin = [];
     try {
       [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
       [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+      [existingSystemAdmin] = await pool.query(
+        'SELECT account_slot FROM system_admins WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+        [email.trim(), email.trim()]
+      );
     } catch (e) {}
 
     if (
@@ -139,7 +186,8 @@ router.post('/hod-signup', async (req, res) => {
       existingEmailHOD.length > 0 ||
       existingEmailEmp.length > 0 ||
       existingEmailEO.length > 0 ||
-      existingEmailSec.length > 0
+      existingEmailSec.length > 0 ||
+      existingSystemAdmin.length > 0
     ) {
       return res.status(409).json({ message: 'An account with this email address is already registered.' });
     }
@@ -208,13 +256,18 @@ router.post('/executive-officer-signup', async (req, res) => {
     const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     const [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     const [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingSystemAdmin] = await pool.query(
+      'SELECT account_slot FROM system_admins WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+      [email.trim(), email.trim()]
+    );
 
     if (
       existingEmailAdmin.length > 0 ||
       existingEmailHOD.length > 0 ||
       existingEmailEmp.length > 0 ||
       existingEmailEO.length > 0 ||
-      existingEmailSec.length > 0
+      existingEmailSec.length > 0 ||
+      existingSystemAdmin.length > 0
     ) {
       return res.status(409).json({ message: 'An account with this email address is already registered.' });
     }
@@ -286,13 +339,18 @@ router.post('/secretary-signup', async (req, res) => {
     const [existingEmailEmp] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     const [existingEmailEO] = await pool.query('SELECT id FROM executive_officers WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
     const [existingEmailSec] = await pool.query('SELECT id FROM secretary WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existingSystemAdmin] = await pool.query(
+      'SELECT account_slot FROM system_admins WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+      [email.trim(), email.trim()]
+    );
 
     if (
       existingEmailAdmin.length > 0 ||
       existingEmailHOD.length > 0 ||
       existingEmailEmp.length > 0 ||
       existingEmailEO.length > 0 ||
-      existingEmailSec.length > 0
+      existingEmailSec.length > 0 ||
+      existingSystemAdmin.length > 0
     ) {
       return res.status(409).json({ message: 'An account with this email address is already registered.' });
     }
@@ -326,6 +384,143 @@ router.post('/secretary-signup', async (req, res) => {
     return res.status(500).json({ message: 'Secretary registration failed. Please try again.' });
   }
 });
+
+/**
+ * @route   POST /api/auth/system-admin-setup
+ * @desc    Create both System Admin accounts exactly once
+ */
+router.post('/system-admin-setup', async (req, res) => {
+  const configuredKey = process.env.SYSTEM_ADMIN_SETUP_KEY;
+  if (!configuredKey || Buffer.byteLength(configuredKey) < 32) {
+    return res.status(503).json({
+      message: 'System Admin setup is not enabled. Configure a setup key of at least 32 characters on the backend.',
+    });
+  }
+  if (!isValidSystemAdminSetupKey(req.body?.setupKey, configuredKey)) {
+    return res.status(403).json({ message: 'The System Admin setup key is invalid.' });
+  }
+
+  const accounts = req.body?.accounts;
+  if (
+    !Array.isArray(accounts) ||
+    accounts.length !== 2 ||
+    !accounts.every(validSystemAdminAccount)
+  ) {
+    return res.status(400).json({
+      message: 'Provide exactly two accounts with valid distinct usernames, emails, and strong passwords.',
+    });
+  }
+
+  const normalizedAccounts = accounts.map((account) => ({
+    username: account.username.trim().toLowerCase(),
+    email: account.email.trim().toLowerCase(),
+    password: account.password,
+  }));
+  if (
+    normalizedAccounts[0].username === normalizedAccounts[1].username ||
+    normalizedAccounts[0].email === normalizedAccounts[1].email
+  ) {
+    return res.status(400).json({
+      message: 'The two System Admin accounts must use different usernames and email addresses.',
+    });
+  }
+
+  try {
+    const identifiers = normalizedAccounts.flatMap(({ username, email }) => [email, username]);
+    const accountTables = ['admins', 'hod', 'secretary', 'executive_officers', 'employees'];
+    const existingAccountChecks = await Promise.all(accountTables.map((table) =>
+      pool.query(
+        `SELECT id FROM ${table} WHERE LOWER(email) IN (?, ?, ?, ?) LIMIT 1`,
+        identifiers
+      )
+    ));
+    const [existingSystemAdminIdentifiers] = await pool.query(
+      `SELECT account_slot FROM system_admins
+       WHERE LOWER(email) IN (?, ?, ?, ?)
+          OR LOWER(username) IN (?, ?, ?, ?)
+       LIMIT 1`,
+      [...identifiers, ...identifiers]
+    );
+    if (
+      existingAccountChecks.some(([rows]) => rows.length > 0) ||
+      existingSystemAdminIdentifiers.length > 0
+    ) {
+      return res.status(409).json({
+        message: 'A supplied username or email address is already assigned to an existing account.',
+      });
+    }
+
+    const passwordHashes = await Promise.all(
+      normalizedAccounts.map(({ password }) => bcrypt.hash(password, 12))
+    );
+    const connection = await pool.getConnection();
+    let transactionStarted = false;
+    try {
+      await connection.beginTransaction();
+      transactionStarted = true;
+      const [slots] = await connection.query(
+        'SELECT slot FROM system_admin_slots ORDER BY slot FOR UPDATE'
+      );
+      if (
+        slots.length !== 2 ||
+        Number(slots[0].slot) !== 1 ||
+        Number(slots[1].slot) !== 2
+      ) {
+        throw new Error('System Admin account slots are not configured correctly.');
+      }
+
+      const [[countRow]] = await connection.query(
+        'SELECT COUNT(*) AS accountCount FROM system_admins'
+      );
+      if (Number(countRow.accountCount) !== 0) {
+        await connection.rollback();
+        transactionStarted = false;
+        return res.status(409).json({
+          message: 'System Admin accounts have already been created.',
+        });
+      }
+
+      for (let index = 0; index < normalizedAccounts.length; index++) {
+        const account = normalizedAccounts[index];
+        await connection.query(
+          `INSERT INTO system_admins
+           (account_slot, name, username, email, password)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            slots[index].slot,
+            account.username,
+            account.username,
+            account.email,
+            passwordHashes[index],
+          ]
+        );
+      }
+      await connection.commit();
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        await connection.rollback();
+      }
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    return res.status(201).json({
+      message: 'Both System Admin accounts were created successfully.',
+      accounts: normalizedAccounts.map(({ username, email }) => ({ username, email })),
+    });
+  } catch (error) {
+    console.error('[Auth Error] /system-admin-setup:', error);
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        message: 'A System Admin username or email is already in use.',
+      });
+    }
+    return res.status(500).json({ message: 'System Admin account setup failed.' });
+  }
+});
+
 /**
  * @route   POST /api/auth/login
  */
@@ -339,6 +534,31 @@ router.post('/login', async (req, res) => {
   const cleanEmail = email.trim().toLowerCase();
 
   try {
+    const [systemAdminRows] = await pool.query(
+      `SELECT account_slot, name, username, email, password, designation
+       FROM system_admins
+       WHERE LOWER(email) = ? OR LOWER(username) = ?
+       LIMIT 1`,
+      [cleanEmail, cleanEmail]
+    );
+
+    if (systemAdminRows.length > 0) {
+      const systemAdmin = systemAdminRows[0];
+      const isMatch = await bcrypt.compare(password, systemAdmin.password);
+      if (!isMatch) return res.status(401).json({ message: 'Invalid email or password. Please try again.' });
+
+      const payload = {
+        id: systemAdmin.account_slot,
+        name: systemAdmin.name,
+        username: systemAdmin.username,
+        email: systemAdmin.email,
+        role: 'system_admin',
+        designation: systemAdmin.designation || 'System Administrator',
+      };
+      const token = jwt.sign(payload, process.env.JWT_SECRET || 'leave_sys_123', { expiresIn: process.env.JWT_EXPIRE || '7d' });
+      return res.status(200).json({ message: 'Login successful', token, user: payload, mustChangePassword: false });
+    }
+
     const [adminRows] = await pool.query(
       'SELECT id, name, email, password, division, role, designation, employee_id FROM admins WHERE LOWER(email) = ? LIMIT 1',
       [cleanEmail]
@@ -486,6 +706,22 @@ router.get('/me', verifyToken, async (req, res) => {
       if (rows.length === 0) return res.status(404).json({ message: 'HOD not found in database.' });
       const hod = rows[0];
       return res.status(200).json({ id: hod.id, name: hod.name, email: hod.email, division: hod.division, role: 'hod', designation: hod.designation || 'Head of Division', employeeId: hod.employee_id });
+    } else if (req.user.role === 'system_admin') {
+      const [rows] = await pool.query(
+        'SELECT account_slot, name, username, email, phone, role, designation FROM system_admins WHERE account_slot = ? LIMIT 1',
+        [req.user.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: 'System Admin account not found.' });
+      const systemAdmin = rows[0];
+      return res.status(200).json({
+        id: systemAdmin.account_slot,
+        name: systemAdmin.name,
+        username: systemAdmin.username,
+        email: systemAdmin.email,
+        phone: systemAdmin.phone || '',
+        role: 'system_admin',
+        designation: systemAdmin.designation,
+      });
     } else {
       const [rows] = await pool.query('SELECT id, name, email, division, designation, status FROM employees WHERE id = ? LIMIT 1', [req.user.id]);
       if (rows.length === 0) return res.status(404).json({ message: 'Employee not found in database.' });
@@ -495,6 +731,95 @@ router.get('/me', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[Auth Error] /api/auth/me:', error);
     return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/system-admin/profile', verifyToken, requireSystemAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT account_slot AS id, name, username, email, phone, designation, role
+       FROM system_admins WHERE account_slot = ? LIMIT 1`,
+      [req.user.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'System Admin profile not found.' });
+    }
+    return res.status(200).json({ profile: rows[0] });
+  } catch (error) {
+    console.error('[Auth Error] GET /system-admin/profile:', error);
+    return res.status(500).json({ message: 'Failed to load System Admin profile.' });
+  }
+});
+
+router.put('/system-admin/profile', verifyToken, requireSystemAdmin, async (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  const designation = typeof req.body?.designation === 'string'
+    ? req.body.designation.trim()
+    : '';
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!name || name.length > 100) {
+    return res.status(400).json({ message: 'Name is required and must be 100 characters or fewer.' });
+  }
+  if (!email || email.length > 150 || !emailPattern.test(email)) {
+    return res.status(400).json({ message: 'Provide a valid email address (maximum 150 characters).' });
+  }
+  if (phone.length > 30) {
+    return res.status(400).json({ message: 'Phone number must be 30 characters or fewer.' });
+  }
+  if (!designation || designation.length > 100) {
+    return res.status(400).json({ message: 'Designation is required and must be 100 characters or fewer.' });
+  }
+
+  try {
+    const accountTables = ['admins', 'hod', 'secretary', 'executive_officers', 'employees'];
+    const emailChecks = await Promise.all(accountTables.map((table) =>
+      pool.query(`SELECT id FROM ${table} WHERE LOWER(email) = ? LIMIT 1`, [email])
+    ));
+    const [otherSystemAdminRows] = await pool.query(
+      `SELECT account_slot FROM system_admins
+       WHERE (LOWER(email) = ? OR LOWER(username) = ?)
+         AND account_slot != ?
+       LIMIT 1`,
+      [email, email, req.user.id]
+    );
+    if (emailChecks.some(([rows]) => rows.length > 0) || otherSystemAdminRows.length > 0) {
+      return res.status(409).json({ message: 'This email address is already in use.' });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE system_admins
+       SET name = ?, email = ?, phone = ?, designation = ?
+       WHERE account_slot = ?`,
+      [name, email, phone || null, designation, req.user.id]
+    );
+    if (result.affectedRows === 0) {
+      const [rows] = await pool.query(
+        'SELECT account_slot FROM system_admins WHERE account_slot = ? LIMIT 1',
+        [req.user.id]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ message: 'System Admin profile not found.' });
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT account_slot AS id, name, username, email, phone, designation, role
+       FROM system_admins WHERE account_slot = ? LIMIT 1`,
+      [req.user.id]
+    );
+    return res.status(200).json({
+      message: 'System Admin profile updated successfully.',
+      profile: rows[0],
+    });
+  } catch (error) {
+    console.error('[Auth Error] PUT /system-admin/profile:', error);
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'This email address is already in use.' });
+    }
+    return res.status(500).json({ message: 'Failed to update System Admin profile.' });
   }
 });
 
@@ -508,7 +833,7 @@ router.post('/logout', (req, res) => {
 /**
  * @route   POST /api/auth/change-password
  */
-router.post('/change-password', verifyToken, async (req, res) => {
+router.post('/change-password', verifyToken, denySystemAdmin, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const userId = req.user.id;
   const role = req.user.role;
@@ -823,7 +1148,7 @@ router.post('/reset-password', async (req, res) => {
 /**
  * @route   GET /api/auth/profile
  */
-router.get('/profile', verifyToken, async (req, res) => {
+router.get('/profile', verifyToken, denySystemAdmin, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
 
@@ -914,7 +1239,7 @@ router.get('/profile', verifyToken, async (req, res) => {
  * @desc    Update own profile (name, email, designation, appointment_date)
  * @access  Private (Employee only for now)
  */
-router.put('/profile', verifyToken, async (req, res) => {
+router.put('/profile', verifyToken, denySystemAdmin, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
   const { name, email, designation, appointment_date } = req.body;
@@ -1088,7 +1413,7 @@ router.put('/profile', verifyToken, async (req, res) => {
  * @desc    Get user's own signature
  * @access  Private
  */
-router.get('/signature', verifyToken, async (req, res) => {
+router.get('/signature', verifyToken, denySystemAdmin, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
 
@@ -1121,7 +1446,7 @@ router.get('/signature', verifyToken, async (req, res) => {
  * @desc    Update user's own signature
  * @access  Private
  */
-router.put('/signature', verifyToken, async (req, res) => {
+router.put('/signature', verifyToken, denySystemAdmin, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
   const { signature } = req.body;

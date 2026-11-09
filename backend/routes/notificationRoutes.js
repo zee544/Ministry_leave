@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, denySystemAdmin } = require('../middleware/auth');
 const { broadcastNotification } = require('./notificationsStream');
 
 function getNotificationScope(user) {
@@ -62,7 +62,7 @@ router.get('/', verifyToken, async (req, res) => {
  * @desc    Create a new notification
  * @access  Private
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, denySystemAdmin, async (req, res) => {
   const { message, type, recipient, division, link } = req.body;
 
   if (!message || !type || !recipient) {
@@ -103,7 +103,7 @@ router.post('/', verifyToken, async (req, res) => {
  * @desc    Mark a notification as read
  * @access  Private
  */
-router.patch('/:id/read', verifyToken, async (req, res) => {
+router.patch('/:id/read', verifyToken, denySystemAdmin, async (req, res) => {
   const notifId = req.params.id;
   try {
     const scope = getNotificationScope(req.user);
@@ -130,7 +130,7 @@ router.patch('/:id/read', verifyToken, async (req, res) => {
  * @desc    Mark all notifications for current user as read
  * @access  Private
  */
-router.patch('/read-all', verifyToken, async (req, res) => {
+router.patch('/read-all', verifyToken, denySystemAdmin, async (req, res) => {
   try {
     const scope = getNotificationScope(req.user);
     await pool.query(

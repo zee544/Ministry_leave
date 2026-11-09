@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS `admins` (
   INDEX `idx_admin_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ---------------------------------------------------------------------
+-- 2b. Ministry-wide read-only System Admin accounts (exactly two slots)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `system_admin_slots` (
+  `slot` TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+  CONSTRAINT `chk_system_admin_slot` CHECK (`slot` IN (1, 2))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO `system_admin_slots` (`slot`) VALUES (1), (2);
+
+CREATE TABLE IF NOT EXISTS `system_admins` (
+  `account_slot` TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL,
+  `username` VARCHAR(80) NOT NULL UNIQUE,
+  `email` VARCHAR(150) NOT NULL UNIQUE,
+  `phone` VARCHAR(30) NULL,
+  `password` VARCHAR(255) NOT NULL,
+  `role` VARCHAR(50) NOT NULL DEFAULT 'system_admin',
+  `designation` VARCHAR(100) NOT NULL DEFAULT 'System Administrator',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_system_admin_account_slot`
+    FOREIGN KEY (`account_slot`) REFERENCES `system_admin_slots` (`slot`)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Note: Run `npm run setup-db -- --seed` to generate and seed unique bcrypt
 -- hashes for the 12 demo admins, or configure admin accounts directly:
 -- 1.  Accounts:                     admin.accounts@ministry.gov.lk  / Accounts#2026!Acc

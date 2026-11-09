@@ -26,6 +26,7 @@ function ProtectedRoute({ children, roles }) {
       employee: "/userdashboard",
       secretary: "/secretarydashboard",
       executive_officer: "/executive-officer-dashboard",
+      system_admin: "/system-admin-dashboard",
     };
 
     const fallback = fallbackByRole[currentUser.role] || "/";

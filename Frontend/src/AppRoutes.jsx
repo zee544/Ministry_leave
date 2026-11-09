@@ -11,6 +11,8 @@ const HODSignup = lazy(() => import("./HODSignup.jsx"));
 const ResetPassword = lazy(() => import("./ResetPassword.jsx"));
 const SecretaryDashboard = lazy(() => import("./Secretary/SecretaryDashboard.jsx"));
 const ExecutiveOfficerDashboard = lazy(() => import("./Executive/ExecutiveOfficerDashboard.jsx"));
+const SystemAdminDashboard = lazy(() => import("./SystemAdmin/SystemAdminDashboard.jsx"));
+const SystemAdminSetup = lazy(() => import("./SystemAdmin/SystemAdminSetup.jsx"));
 const SecretarySignup = lazy(() => import("./pages/SecretarySignup.jsx"));
 const ExecutiveOfficerSignup = lazy(() => import("./pages/ExecutiveOfficerSignup.jsx"));
 
@@ -22,6 +24,7 @@ export default function AppRoutes() {
         <Route path="/admin-signup" element={<AdminSignup />} />
         <Route path="/hod-signup" element={<HODSignup />} />
         <Route path="/secretary-signup" element={<SecretarySignup />} />
+        <Route path="/system-admin-setup" element={<SystemAdminSetup />} />
         <Route path="/executive-officer-signup" element={<ExecutiveOfficerSignup />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route
@@ -61,6 +64,14 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute roles={["executive_officer"]}>
               <ExecutiveOfficerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/system-admin-dashboard"
+          element={
+            <ProtectedRoute roles={["system_admin"]}>
+              <SystemAdminDashboard />
             </ProtectedRoute>
           }
         />

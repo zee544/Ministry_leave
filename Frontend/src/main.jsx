@@ -19,6 +19,8 @@ import ExecutiveOfficerSignup from './pages/ExecutiveOfficerSignup.jsx'
 import SecretarySignup from './pages/SecretarySignup.jsx'
 import SecretaryDashboard from './Secretary/SecretaryDashboard.jsx'
 import ExecutiveOfficerDashboard from './Executive/ExecutiveOfficerDashboard.jsx'
+import SystemAdminDashboard from './SystemAdmin/SystemAdminDashboard.jsx'
+import SystemAdminSetup from './SystemAdmin/SystemAdminSetup.jsx'
 
 
 createRoot(document.getElementById('root')).render(
@@ -37,6 +39,7 @@ createRoot(document.getElementById('root')).render(
                 <Route path="/reset-password" element={<ResetPassword />} />
                  <Route path="/executive-officer-signup" element={<ExecutiveOfficerSignup />} />
                   <Route path="/secretary-signup" element={<SecretarySignup />} />
+                  <Route path="/system-admin-setup" element={<SystemAdminSetup />} />
 
                 
                 <Route
@@ -52,6 +55,14 @@ createRoot(document.getElementById('root')).render(
   element={
     <ProtectedRoute roles={["secretary"]}>
       <SecretaryDashboard />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/system-admin-dashboard"
+  element={
+    <ProtectedRoute roles={["system_admin"]}>
+      <SystemAdminDashboard />
     </ProtectedRoute>
   }
 />

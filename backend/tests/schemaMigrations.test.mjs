@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const {
   ensureSecretaryDecisionColumns,
   ensureExtractedSignatureColumns,
+  ensureSystemAdminTables,
 } = require('../utils/schemaMigrations');
 
 describe('Secretary decision schema migration', () => {
@@ -55,5 +56,65 @@ describe('Extracted signature schema migration', () => {
       'ALTER TABLE `executive_officers` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
       'ALTER TABLE `secretary` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
     ]);
+  });
+});
+
+describe('System Admin schema migration', () => {
+  it('adds the phone field to the existing System Admin table without replacing accounts', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([[{ COLUMN_NAME: 'username' }], []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []]);
+
+    await ensureSystemAdminTables({ query });
+
+    expect(query).toHaveBeenCalledTimes(5);
+    expect(query.mock.calls[0][0]).toContain('CREATE TABLE IF NOT EXISTS system_admin_slots');
+    expect(query.mock.calls[0][0]).toContain('CHECK (slot IN (1, 2))');
+    expect(query.mock.calls[1]).toEqual([
+      'INSERT IGNORE INTO system_admin_slots (slot) VALUES (1), (2)',
+    ]);
+    expect(query.mock.calls[2][0]).toContain('account_slot TINYINT UNSIGNED NOT NULL PRIMARY KEY');
+    expect(query.mock.calls[2][0]).toContain('FOREIGN KEY (account_slot) REFERENCES system_admin_slots (slot)');
+    expect(query.mock.calls[4][0]).toBe(
+      'ALTER TABLE system_admins ADD COLUMN phone VARCHAR(30) NULL AFTER email'
+    );
+  });
+
+  it('adds both profile columns without replacing existing account data', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []]);
+
+    await ensureSystemAdminTables({ query });
+
+    expect(query).toHaveBeenCalledTimes(6);
+    expect(query.mock.calls[4][0]).toBe(
+      'ALTER TABLE system_admins ADD COLUMN username VARCHAR(80) NULL UNIQUE AFTER name'
+    );
+    expect(query.mock.calls[5][0]).toBe(
+      'ALTER TABLE system_admins ADD COLUMN phone VARCHAR(30) NULL AFTER email'
+    );
+  });
+
+  it('does not alter databases where username and phone columns already exist', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 0 }, []])
+      .mockResolvedValueOnce([[
+        { COLUMN_NAME: 'username' },
+        { COLUMN_NAME: 'phone' },
+      ], []]);
+
+    await ensureSystemAdminTables({ query });
+
+    expect(query).toHaveBeenCalledTimes(4);
   });
 });

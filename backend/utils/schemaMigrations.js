@@ -11,6 +11,55 @@ const SIGNATURE_PROFILE_TABLES = [
   'employees',
 ];
 
+async function ensureSystemAdminTables(database) {
+  await database.query(`
+    CREATE TABLE IF NOT EXISTS system_admin_slots (
+      slot TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+      CONSTRAINT chk_system_admin_slot CHECK (slot IN (1, 2))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  await database.query(
+    'INSERT IGNORE INTO system_admin_slots (slot) VALUES (1), (2)'
+  );
+  await database.query(`
+    CREATE TABLE IF NOT EXISTS system_admins (
+      account_slot TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      username VARCHAR(80) NOT NULL UNIQUE,
+      email VARCHAR(150) NOT NULL UNIQUE,
+      password VARCHAR(255) NOT NULL,
+      phone VARCHAR(30) NULL,
+      role VARCHAR(50) NOT NULL DEFAULT 'system_admin',
+      designation VARCHAR(100) NOT NULL DEFAULT 'System Administrator',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_system_admin_account_slot
+        FOREIGN KEY (account_slot) REFERENCES system_admin_slots (slot)
+        ON UPDATE RESTRICT ON DELETE RESTRICT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  const [columns] = await database.query(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'system_admins'
+       AND COLUMN_NAME IN ('username', 'phone')`
+  );
+  const existingColumns = new Set(columns.map((column) => column.COLUMN_NAME));
+  if (!existingColumns.has('username')) {
+    await database.query(
+      'ALTER TABLE system_admins ADD COLUMN username VARCHAR(80) NULL UNIQUE AFTER name'
+    );
+    console.log('[DB Migration] Added System Admin usernames.');
+  }
+  if (!existingColumns.has('phone')) {
+    await database.query(
+      'ALTER TABLE system_admins ADD COLUMN phone VARCHAR(30) NULL AFTER email'
+    );
+    console.log('[DB Migration] Added System Admin phone numbers.');
+  }
+}
+
 async function ensureSecretaryDecisionColumns(database) {
   const [existingColumns] = await database.query(
     `SELECT COLUMN_NAME
@@ -63,4 +112,8 @@ async function ensureExtractedSignatureColumns(database) {
   }
 }
 
-module.exports = { ensureSecretaryDecisionColumns, ensureExtractedSignatureColumns };
+module.exports = {
+  ensureSecretaryDecisionColumns,
+  ensureExtractedSignatureColumns,
+  ensureSystemAdminTables,
+};

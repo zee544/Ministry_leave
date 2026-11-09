@@ -6,11 +6,15 @@ import { Printer } from "lucide-react";
 export default function LeaveApprovalModal({
   selectedLeave,
   setShowPrintModal,
-  setSelectedLeave
+  setSelectedLeave,
+  leaveRecords
 }) {
   const { getSignature } = useSignatures();
   const { currentUser } = useUser();
-  const { leaves } = useLeaves();
+  const { leaves: contextLeaves } = useLeaves();
+  const leaves = leaveRecords ?? contextLeaves;
+  const getCachedSignature = (key) =>
+    currentUser?.role === 'system_admin' ? null : getSignature(key);
 
   const hasActingOfficer = Boolean(
     selectedLeave?.actingOfficer &&
@@ -330,7 +334,7 @@ export default function LeaveApprovalModal({
       : role === "hod"
         ? `hod_${currentUser.id}`
         : currentUser.name;
-    return getSignature(key);
+    return getCachedSignature(key);
   };
 
   const applicantRole = selectedLeave?.applicantRole ?? selectedLeave?.applicant_role;
@@ -344,7 +348,7 @@ export default function LeaveApprovalModal({
     ) ||
     selectedLeave?.applicantSignature ||
     selectedLeave?.applicant_signature ||
-    (isAdminLeave ? getSignature("admin") : getSignature(selectedLeave?.employee));
+    (isAdminLeave ? getCachedSignature("admin") : getCachedSignature(selectedLeave?.employee));
 
   const actingOfficerSignature = hasActingOfficer
     ? (isActingConfirmed
@@ -356,7 +360,7 @@ export default function LeaveApprovalModal({
          ) ||
          selectedLeave?.actingOfficerSignature ||
        selectedLeave?.acting_officer_signature ||
-       getSignature(selectedLeave?.actingOfficer)
+       getCachedSignature(selectedLeave?.actingOfficer)
        : null)
     : null;
 
@@ -384,15 +388,15 @@ export default function LeaveApprovalModal({
 
   if (!adminSignature && adminHasSigned) {
     for (const candidate of adminNameCandidates) {
-      const sig = getSignature(candidate);
+      const sig = getCachedSignature(candidate);
       if (sig) { adminSignature = sig; break; }
     }
     if (!adminSignature) {
       adminSignature =
-        getSignature("admin") ||
-        getSignature("Admin") ||
-        getSignature("supervising officer") ||
-        getSignature("Supervising Officer") ||
+        getCachedSignature("admin") ||
+        getCachedSignature("Admin") ||
+        getCachedSignature("supervising officer") ||
+        getCachedSignature("Supervising Officer") ||
         null;
     }
   }
@@ -434,15 +438,15 @@ export default function LeaveApprovalModal({
 
   if (!hodSignature && hodHasSigned) {
     for (const candidate of hodNameCandidates) {
-      const sig = getSignature(candidate);
+      const sig = getCachedSignature(candidate);
       if (sig) { hodSignature = sig; break; }
     }
     if (!hodSignature) {
       hodSignature =
-        getSignature("hod") ||
-        getSignature("HOD") ||
-        getSignature("head of department") ||
-        getSignature("Head of Department") ||
+        getCachedSignature("hod") ||
+        getCachedSignature("HOD") ||
+        getCachedSignature("head of department") ||
+        getCachedSignature("Head of Department") ||
         null;
     }
   }

@@ -132,6 +132,12 @@ export function UserProvider({ children }) {
       userDivision = user.division || "";
       userName = user.name || "";
 
+      if (role === "system_admin") {
+        setEmployees([]);
+        setLoading(false);
+        return;
+      }
+
       // EMPLOYEE
       if (role === 'employee') {
         try {
@@ -484,6 +490,17 @@ export function UserProvider({ children }) {
     }
   }, [fetchEmployees]);
 
+  const updateCurrentUser = useCallback((userData) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, ...userData };
+    setCurrentUser(updatedUser);
+    try {
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+    } catch (storageError) {
+      console.warn("Storage error:", storageError);
+    }
+  }, [currentUser]);
+
   const logout = useCallback(() => {
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -512,6 +529,7 @@ export function UserProvider({ children }) {
     leaveEntitlements: LEAVE_ENTITLEMENTS,
     isAuthenticated,
     login,
+    updateCurrentUser,
     logout,
   };
 

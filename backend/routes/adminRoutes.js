@@ -4,7 +4,28 @@ const bcrypt = require('bcryptjs');
 const axios = require('axios');
 const pool = require('../config/db');
 const { broadcastNotification } = require('./notificationsStream');
-const { verifyToken, requireAdmin, requireHOD, requireAdminOrHOD } = require('../middleware/auth');
+const {
+  verifyToken,
+  requireAdmin,
+  requireSystemAdmin,
+  requireHOD,
+  requireAdminOrHOD,
+} = require('../middleware/auth');
+
+router.use((req, res, next) => {
+  if (req.method === 'GET' && req.path === '/system-admin/approved-leaves') {
+    return verifyToken(req, res, () =>
+      requireSystemAdmin(req, res, next)
+    );
+  }
+
+  return verifyToken(req, res, () => {
+    if (req.user.role === 'system_admin') {
+      return res.status(403).json({ message: 'System Admin accounts have read-only access.' });
+    }
+    return next();
+  });
+});
 
 const {
   sendActingOfficerAssignedEmail,
@@ -433,6 +454,66 @@ const LEAVE_BASE_QUERY = `
     ) AS actingOfficerSignature
   FROM leaves l
 `;
+
+function isValidDateFilter(value) {
+  if (!value) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+router.get('/system-admin/approved-leaves', requireSystemAdmin, async (req, res) => {
+  const {
+    employee = '',
+    division = '',
+    leaveType = '',
+    dateFrom = '',
+    dateTo = '',
+  } = req.query;
+
+  if (![dateFrom, dateTo].every(isValidDateFilter)) {
+    return res.status(400).json({ message: 'Dates must be valid YYYY-MM-DD values.' });
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    return res.status(400).json({ message: 'The start date must not be after the end date.' });
+  }
+
+  const conditions = ['l.status = ?'];
+  const params = ['Approved'];
+  if (String(employee).trim()) {
+    conditions.push('l.employee LIKE ?');
+    params.push(`%${String(employee).trim()}%`);
+  }
+  if (String(division).trim()) {
+    conditions.push('LOWER(l.division) = LOWER(?)');
+    params.push(String(division).trim());
+  }
+  if (String(leaveType).trim()) {
+    conditions.push('LOWER(l.type) = LOWER(?)');
+    params.push(String(leaveType).trim());
+  }
+  if (dateFrom) {
+    conditions.push('DATE(COALESCE(l.created_at, l.applied_on)) >= ?');
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    conditions.push('DATE(COALESCE(l.created_at, l.applied_on)) <= ?');
+    params.push(dateTo);
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `${LEAVE_BASE_QUERY}
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
+      params
+    );
+    return res.status(200).json(rows);
+  } catch (error) {
+    console.error('[System Admin API Error] /approved-leaves:', error);
+    return res.status(500).json({ message: 'Failed to retrieve approved leave records.' });
+  }
+});
 
 async function resolveWorkflow(applicantRole, applicantId, applicantEmail, division) {
   try {
@@ -2101,6 +2182,13 @@ router.post('/hod/employees', verifyToken, requireHOD, async (req, res) => {
     if (duplicateChecks.some(([rows]) => rows.length > 0)) {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
+    const [systemAdminDuplicate] = await pool.query(
+      'SELECT account_slot FROM system_admins WHERE LOWER(email) = ? OR LOWER(username) = ? LIMIT 1',
+      [normalizedEmail, normalizedEmail]
+    );
+    if (systemAdminDuplicate.length > 0) {
+      return res.status(409).json({ message: 'This email is already assigned to a System Admin.' });
+    }
 
     const temporaryPassword = String(req.body.password || '').trim() || 'Ministry@123';
     if (temporaryPassword.length < 6 || temporaryPassword.length > 128) {
@@ -2578,6 +2666,14 @@ router.post('/employees', async (req, res) => {
   }
 
   try {
+    const [systemAdminDuplicate] = await pool.query(
+      'SELECT account_slot FROM system_admins WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+      [email.trim(), email.trim()]
+    );
+    if (systemAdminDuplicate.length > 0) {
+      return res.status(409).json({ message: 'This email is already assigned to a System Admin.' });
+    }
+
     const rawPassword =
       password && password.trim()
         ? password.trim()

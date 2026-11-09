@@ -65,6 +65,12 @@ export function LeaveProvider({ children }) {
       }
 
       const user = JSON.parse(userStr);
+      if (user.role === "system_admin") {
+        setLeaves([]);
+        setActingOfficerLeaves([]);
+        setIsLoading(false);
+        return;
+      }
 
       let endpoint;
       if (user.role === "admin") {
@@ -159,6 +165,12 @@ export function LeaveProvider({ children }) {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user") || "null");
     if (!token || !user?.id) {
+      setActingOfficerLeaves([]);
+      actingFetchedAtRef.current = 0;
+      actingFetchedUserRef.current = "";
+      return;
+    }
+    if (user.role === "system_admin") {
       setActingOfficerLeaves([]);
       actingFetchedAtRef.current = 0;
       actingFetchedUserRef.current = "";

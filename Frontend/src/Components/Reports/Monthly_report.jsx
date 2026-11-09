@@ -3,10 +3,12 @@ import { useSearchFilter, Pagination } from "../../hooks/useSearchFilter.jsx";
 import { useLeaves } from "../../hooks/LeaveContext.jsx";
 import { useUser, LEAVE_TYPES } from "../../hooks/UserContext.jsx";
 import LeaveApprovalModal from "../../hooks/LeaveApprovalModal.jsx";
+import { serializeCsv } from "./csvExport.js";
 import { ClipboardList, Check,Clock, X , FileDown, Search} from "lucide-react";
 
-function MonthlyReports() {
-    const { leaves } = useLeaves();
+function MonthlyReports({ leavesOverride }) {
+    const { leaves: contextLeaves } = useLeaves();
+    const leaves = leavesOverride ?? contextLeaves;
     const { currentUser } = useUser();
     const [selectedLeave, setSelectedLeave] = useState(null);
     const [showPrintModal, setShowPrintModal] = useState(false);
@@ -14,12 +16,13 @@ function MonthlyReports() {
     const userDivision = currentUser?.division || "Administration";
 
     const divisionLeaves = useMemo(() => {
+        if (leavesOverride) return leaves;
         return leaves.filter((l) => {
             const leaveDiv = (l.division || "").toLowerCase();
             const uDiv = userDivision.toLowerCase();
             return leaveDiv === uDiv || leaveDiv.replace("istration", "") === uDiv.replace("istration", "");
         });
-    }, [leaves, userDivision]);
+    }, [leaves, leavesOverride, userDivision]);
 
     const allData = useMemo(() => divisionLeaves.map((l) => ({
         id: l.id,
@@ -123,7 +126,7 @@ function MonthlyReports() {
                 rows.push([g.period, item.employee, item.division, item.leaveType, item.noOfDays, item.status, item.from, item.to, item.appliedOn, item.actingOfficer, item.reason]);
             });
         });
-        const csv = rows.map((r) => r.map((v) => '"' + v + '"').join(",")).join(String.fromCharCode(10));
+        const csv = serializeCsv(rows);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a"); a.href = url; a.download = filename + ".csv"; a.click();
@@ -136,7 +139,7 @@ function MonthlyReports() {
         group.items.forEach((item) => {
             rows.push([group.period, item.employee, item.division, item.leaveType, item.noOfDays, item.status, item.from, item.to, item.appliedOn, item.actingOfficer, item.reason]);
         });
-        const csv = rows.map((r) => r.map((v) => '"' + v + '"').join(",")).join(String.fromCharCode(10));
+        const csv = serializeCsv(rows);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = safeName + "_monthly_report.csv"; a.click();
         URL.revokeObjectURL(blob);
@@ -405,7 +408,7 @@ function MonthlyReports() {
             </div>
 
             {showPrintModal && selectedLeave && (
-                <LeaveApprovalModal selectedLeave={selectedLeave} setShowPrintModal={setShowPrintModal} setSelectedLeave={setSelectedLeave} />
+                <LeaveApprovalModal selectedLeave={selectedLeave} setShowPrintModal={setShowPrintModal} setSelectedLeave={setSelectedLeave} leaveRecords={leaves} />
             )}
         </div>
     );

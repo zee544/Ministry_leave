@@ -154,7 +154,11 @@ describe('employee creation endpoint', () => {
   });
 
   it('creates an active employee in the authenticated admin division with a hashed password', async () => {
-    const query = vi.spyOn(pool, 'query').mockResolvedValue([{ insertId: 325 }, []]);
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('FROM system_admins')) return [[], []];
+      if (sql.includes('INSERT INTO employees')) return [{ insertId: 325 }, []];
+      return [[], []];
+    });
     const response = await post('/api/admin/employees', {
       name: 'New Employee',
       designation: 'Officer',
@@ -175,7 +179,9 @@ describe('employee creation endpoint', () => {
       status: 'Active',
     });
 
-    const [insertSql, insertValues] = query.mock.calls[0];
+    const [insertSql, insertValues] = query.mock.calls.find(([sql]) =>
+      sql.includes('INSERT INTO employees')
+    );
     expect(insertSql).toContain("VALUES (?, ?, ?, ?, ?, ?, 'Active')");
     expect(insertValues.slice(0, 4)).toEqual([
       'New Employee',

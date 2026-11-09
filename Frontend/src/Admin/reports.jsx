@@ -8,7 +8,7 @@ import {
     FileText
 } from "lucide-react";
 
-function Reports() {
+function Reports({ leaves }) {
     const [activeReport, setActiveReport] = useState("annual");
 
     const reportTabs = [
@@ -40,9 +40,9 @@ function Reports() {
                 ))}
             </div>
 
-            {activeReport === "annual" && <AnnualReports />}
-            {activeReport === "monthly" && <MonthlyReports />}
-            {activeReport === "daily" && <DailyReports />}
+            {activeReport === "annual" && <AnnualReports leavesOverride={leaves} />}
+            {activeReport === "monthly" && <MonthlyReports leavesOverride={leaves} />}
+            {activeReport === "daily" && <DailyReports leavesOverride={leaves} />}
         </div>
     );
 }
