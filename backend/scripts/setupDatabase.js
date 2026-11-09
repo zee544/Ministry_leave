@@ -313,12 +313,17 @@ async function setupDatabase() {
     let applicantIdentitySchemaAdded = false;
     for (const [tableName, columnName, definition] of [
       ['admins', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['admins', 'signature_image_extracted', 'MEDIUMTEXT NULL'],
       ['hod', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['hod', 'signature_image_extracted', 'MEDIUMTEXT NULL'],
       ['executive_officers', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['executive_officers', 'signature_image_extracted', 'MEDIUMTEXT NULL'],
       ['secretary', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['secretary', 'signature_image_extracted', 'MEDIUMTEXT NULL'],
       ['employees', 'password', "VARCHAR(255) NOT NULL DEFAULT ''"],
       ['employees', 'must_change_password', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['employees', 'signature_image', 'MEDIUMTEXT NULL'],
+      ['employees', 'signature_image_extracted', 'MEDIUMTEXT NULL'],
       ['leaves', 'decline_reason', 'TEXT NULL'],
       ['leaves', 'admin_approval_required', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['leaves', 'acting_officer_confirmed', 'BOOLEAN NOT NULL DEFAULT FALSE'],

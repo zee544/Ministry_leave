@@ -18,10 +18,11 @@ function UserSidebar({ activeTab, onTabChange, isOpen, onClose }) {
 
     const sidebarItems = [
         { key: "dashboard",       label: "Dashboard",        icon: LayoutDashboard },
-        { key: "profile",         label: "My Profile",       icon: User            },
+      
         { key: "applyleave",      label: "Apply Leave",      icon: FileText        },
         { key: "myleaves",        label: "My Leaves",        icon: ClipboardList   },
         { key: "actingapprovals", label: "Acting Approvals", icon: Users           },
+          { key: "profile",         label: "My Profile",       icon: User            },
         { key: "settings",        label: "Settings",         icon: Settings        },
     ];
 

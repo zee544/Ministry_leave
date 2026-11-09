@@ -19,11 +19,12 @@ function HODSidebar({ activeTab, onTabChange, isOpen, onClose }) {
 
     const sidebarItems = [
         { key: "dashboard",   label: "Dashboard",       icon: LayoutDashboard },
+         { key: "employees",   label: "Employees",        icon: Users           },
         { key: "leaves",      label: "Leave Approvals", icon: ClipboardList   },
         { key: "acting-approvals", label: "Acting Approvals", icon: UserCheck },
         { key: "apply-leave", label: "Apply for Leave", icon: CalendarPlus    },
         { key: "my-leaves",   label: "My Leaves",        icon: FileText        },
-        { key: "employees",   label: "Employees",        icon: Users           },
+       
         { key: "settings",    label: "Settings",        icon: Settings        },
     ];
 

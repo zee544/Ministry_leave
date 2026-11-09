@@ -8,7 +8,7 @@ import ApprovalSettings from "../Components/ApprovalSettings.jsx";
 
 function Settings() {
   const { currentUser, leaveEntitlements } = useUser();
-  const { getSignature } = useSignatures();
+  const { getSourceSignature, getExtractedSignature } = useSignatures();
   const { leaves } = useLeaves();
 
   const [profile, setProfile] = useState(null);
@@ -218,14 +218,22 @@ function Settings() {
     setSavingSignature(true);
     try {
       const token = localStorage.getItem("token");
-      const signature = getSignature("admin");
+      const signature = getSourceSignature("admin");
+      const extractedSignature = getExtractedSignature("admin");
+      if (!signature) {
+        showToast("Upload a signature before saving.", "error");
+        return;
+      }
       const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ signature: signature || null }),
+        body: JSON.stringify({
+          signature: signature || null,
+          extractedSignature: extractedSignature || null,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -504,31 +512,7 @@ function Settings() {
             </div>
           </div>
 
-          {/* ---------- Division Information ---------- */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
-                Division Information
-              </h2>
-              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Your assigned division and ministry details.
-              </p>
-            </div>
-
-            <div className="px-4 sm:px-6 py-4 sm:py-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
-                <InfoRow
-                  label="Division"
-                  value={profile?.division || currentUser?.division}
-                />
-                <InfoRow
-                  label="Ministry"
-                  value="Ministry of Fisheries, Aquatic and Ocean Resources"
-                />
-              </div>
-            </div>
-          </div>
-
+          
           {/* ---------- Admin Signature ---------- */}
           <ApprovalSettings role="admin" />
 

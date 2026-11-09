@@ -149,6 +149,7 @@ async function setupApprovalWorkflow() {
         designation VARCHAR(100) DEFAULT 'Secretary',
         employee_id VARCHAR(50),
         signature_image MEDIUMTEXT,
+        signature_image_extracted MEDIUMTEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_sec_email (email)
@@ -166,12 +167,17 @@ async function setupApprovalWorkflow() {
         designation VARCHAR(100) DEFAULT 'Executive Officer',
         employee_id VARCHAR(50),
         signature_image MEDIUMTEXT,
+        signature_image_extracted MEDIUMTEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_eo_division (division),
         INDEX idx_eo_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    for (const tableName of ['admins', 'hod', 'executive_officers', 'secretary', 'employees']) {
+      await ensureColumn(conn, tableName, 'signature_image_extracted', 'MEDIUMTEXT NULL');
+    }
 
     // 2. Ensure approval_rules table exists
     await conn.query(`

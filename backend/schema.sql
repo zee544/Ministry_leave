@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS `admins` (
   `designation` VARCHAR(100) DEFAULT 'System Administrator',
   `employee_id` VARCHAR(50),
   `signature_image` MEDIUMTEXT,
+  `signature_image_extracted` MEDIUMTEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_admin_division` (`division`),
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS `hod` (
   `designation` VARCHAR(100) DEFAULT 'Head of Division',
   `employee_id` VARCHAR(50),
   `signature_image` MEDIUMTEXT,
+  `signature_image_extracted` MEDIUMTEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_hod_division` (`division`)
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS `executive_officers` (
   `designation` VARCHAR(100) DEFAULT 'Executive Officer',
   `employee_id` VARCHAR(50),
   `signature_image` MEDIUMTEXT,
+  `signature_image_extracted` MEDIUMTEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_eo_division` (`division`),
@@ -116,6 +119,7 @@ CREATE TABLE IF NOT EXISTS `secretary` (
   `designation` VARCHAR(100) DEFAULT 'Secretary',
   `employee_id` VARCHAR(50),
   `signature_image` MEDIUMTEXT,
+  `signature_image_extracted` MEDIUMTEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_sec_email` (`email`)
@@ -135,6 +139,7 @@ CREATE TABLE IF NOT EXISTS `employees` (
   `appointment_date` DATE NOT NULL,
   `status` ENUM('Active', 'Inactive', 'On Leave') DEFAULT 'Active',
   `signature_image` MEDIUMTEXT,
+  `signature_image_extracted` MEDIUMTEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_emp_division` (`division`),
   INDEX `idx_emp_status` (`status`)

@@ -3,7 +3,7 @@ import { apiUrl } from "../api.js";
 
 const LeaveContext = createContext();
 
-const sortBySubmissionFifo = (items) => {
+const sortBySubmissionNewestFirst = (items) => {
   const timestamp = (leave) => {
     const submittedAt =
       leave.submittedAt || leave.createdAt || leave.appliedOn || 0;
@@ -11,7 +11,7 @@ const sortBySubmissionFifo = (items) => {
     return Number.isNaN(parsed) ? 0 : parsed;
   };
   return [...items].sort((a, b) =>
-    timestamp(a) - timestamp(b) || Number(a.id || 0) - Number(b.id || 0)
+    timestamp(b) - timestamp(a) || Number(b.id || 0) - Number(a.id || 0)
   );
 };
 
@@ -139,7 +139,7 @@ export function LeaveProvider({ children }) {
 
         if (allLeaves.length > 0) {
           const mapped = allLeaves.map(normalizeLeave);
-          setLeaves(sortBySubmissionFifo(mapped));
+          setLeaves(sortBySubmissionNewestFirst(mapped));
         } else {
           setLeaves([]);
         }
@@ -205,7 +205,7 @@ export function LeaveProvider({ children }) {
       if (!Array.isArray(data)) {
         throw new Error("The Acting Approvals response was not a leave list.");
       }
-      setActingOfficerLeaves(sortBySubmissionFifo(data.map(normalizeLeave)));
+      setActingOfficerLeaves(sortBySubmissionNewestFirst(data.map(normalizeLeave)));
       actingFetchedAtRef.current = Date.now();
       actingFetchedUserRef.current = userKey;
     } catch (err) {
@@ -342,7 +342,7 @@ export function LeaveProvider({ children }) {
       };
     }
 
-    setLeaves((prev) => sortBySubmissionFifo([savedLeave, ...prev]));
+    setLeaves((prev) => sortBySubmissionNewestFirst([savedLeave, ...prev]));
     return savedLeave;
   }, []);
 
@@ -372,7 +372,7 @@ export function LeaveProvider({ children }) {
       const declinedBy = action === "decline" ? "Acting Officer" : null;
       const declineReason = action === "decline" ? (reason?.trim() || null) : null;
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -390,7 +390,7 @@ export function LeaveProvider({ children }) {
         )
       );
       setActingOfficerLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -443,7 +443,7 @@ export function LeaveProvider({ children }) {
       }
 
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -494,7 +494,7 @@ export function LeaveProvider({ children }) {
 
       const data = await res.json();
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -550,7 +550,7 @@ export function LeaveProvider({ children }) {
       }
 
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -583,7 +583,7 @@ export function LeaveProvider({ children }) {
   const updateLeave = useCallback(
     async (id, updates) => {
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((l) => (l.id === id ? { ...l, ...updates } : l))
         )
       );
@@ -645,7 +645,7 @@ export function LeaveProvider({ children }) {
         return { success: false, message: data.message || "Failed to cancel leave" };
 
       setLeaves((prev) =>
-        sortBySubmissionFifo(
+        sortBySubmissionNewestFirst(
           prev.map((l) =>
             l.id === id
               ? {
@@ -690,7 +690,7 @@ export function LeaveProvider({ children }) {
         actingOfficerLeaves.map((leave) => [String(leave.id), leave])
       );
       leaves.forEach((leave) => mergedById.set(String(leave.id), leave));
-      return sortBySubmissionFifo([...mergedById.values()].filter((l) => {
+      return sortBySubmissionNewestFirst([...mergedById.values()].filter((l) => {
         const assignedId = l.actingOfficerUserId ?? l.acting_officer_user_id;
         const assignedRole = l.actingOfficerRole ?? l.acting_officer_role;
         if (assignedId != null && assignedRole) {

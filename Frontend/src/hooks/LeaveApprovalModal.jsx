@@ -267,33 +267,23 @@ export default function LeaveApprovalModal({
   const adminHasSigned =
     !isAdminLeave &&
     (
-      (isAdminFinalized && approverRoleLower === "admin") ||
-      declinedBy === "Admin" ||
-      declinedBy === "admin" ||
       status === "Admin Approved" ||
+      (isApproved && isAdminFinalized && approverRoleLower === "admin") ||
+      (isDeclined && String(declinedBy).toLowerCase() === "admin") ||
       selectedLeave?.adminApproved === true ||
       selectedLeave?.recommendedByAdmin === true ||
-      Number(selectedLeave?.recommendedByAdmin ?? selectedLeave?.recommended_by_admin) === 1 ||
-      selectedLeave?.adminSignature ||
-      selectedLeave?.admin_signature ||
-      String(adminApprovedOnValue).trim() !== ''
+      Number(selectedLeave?.recommendedByAdmin ?? selectedLeave?.recommended_by_admin) === 1
     );
 
-  // ✅ FIX: HOD / Senior / Secretary signed if approved or declined
   const hodHasSigned =
-    isHodFinalized ||
-    declinedBy === "HOD" ||
-    declinedBy === "hod";
+    (isApproved && isHodFinalized) ||
+    (isDeclined && String(declinedBy).toLowerCase() === "hod");
 
   const isActingConfirmed = hasActingOfficer && (
     selectedLeave?.actingOfficerConfirmed === true ||
     selectedLeave?.acting_officer_confirmed === true ||
-    selectedLeave?.actingOfficerConfirmed === 1 ||
-    selectedLeave?.acting_officer_confirmed === 1 ||
-    status === "Pending" ||
-    status === "Admin Approved" ||
-    status === "Approved" ||
-    (status === "Declined" && declinedBy === "Acting Officer")
+    Number(selectedLeave?.actingOfficerConfirmed) === 1 ||
+    Number(selectedLeave?.acting_officer_confirmed) === 1
   );
 
   // --- Admin recommendation box ---
@@ -326,15 +316,48 @@ export default function LeaveApprovalModal({
 
   const effectiveAdminDecision = isAdminLeave ? "pending" : adminDecision;
 
+  const localSignatureFor = (role, id, division = null, name = null) => {
+    if (!currentUser || currentUser.role !== role) return null;
+    const sameAccount = id != null
+      ? Number(currentUser.id) === Number(id)
+      : role === "admin"
+        ? String(currentUser.division || "").trim().toLowerCase() ===
+          String(division || "").trim().toLowerCase()
+        : Boolean(name && currentUser.name === name);
+    if (!sameAccount) return null;
+    const key = role === "admin"
+      ? "admin"
+      : role === "hod"
+        ? `hod_${currentUser.id}`
+        : currentUser.name;
+    return getSignature(key);
+  };
+
+  const applicantRole = selectedLeave?.applicantRole ?? selectedLeave?.applicant_role;
+  const applicantUserId = selectedLeave?.applicantUserId ?? selectedLeave?.applicant_user_id;
   const applicantSignature =
+    localSignatureFor(
+      applicantRole,
+      applicantUserId,
+      selectedLeave?.division,
+      selectedLeave?.employee
+    ) ||
     selectedLeave?.applicantSignature ||
     selectedLeave?.applicant_signature ||
     (isAdminLeave ? getSignature("admin") : getSignature(selectedLeave?.employee));
 
   const actingOfficerSignature = hasActingOfficer
-    ? (selectedLeave?.actingOfficerSignature ||
+    ? (isActingConfirmed
+       ? localSignatureFor(
+           selectedLeave?.actingOfficerRole ?? selectedLeave?.acting_officer_role,
+           selectedLeave?.actingOfficerUserId ?? selectedLeave?.acting_officer_user_id,
+           selectedLeave?.division,
+           selectedLeave?.actingOfficer
+         ) ||
+         selectedLeave?.actingOfficerSignature ||
        selectedLeave?.acting_officer_signature ||
-       getSignature(selectedLeave?.actingOfficer))
+       getSignature(selectedLeave?.actingOfficer)
+       : null)
     : null;
 
   // ✅ Admin signature — check backend leave payload first, then SignatureContext
@@ -348,10 +371,16 @@ export default function LeaveApprovalModal({
     (approvedBy && approvedByLower !== 'admin' ? approvedBy : null),
   ].filter(Boolean);
 
-  let adminSignature =
-    selectedLeave?.adminSignature ||
-    selectedLeave?.admin_signature ||
-    null;
+  let adminSignature = adminHasSigned
+    ? localSignatureFor(
+        "admin",
+        selectedLeave?.approvedById ?? selectedLeave?.approved_by_id,
+        selectedLeave?.division
+      ) ||
+      selectedLeave?.adminSignature ||
+      selectedLeave?.admin_signature ||
+      null
+    : null;
 
   if (!adminSignature && adminHasSigned) {
     for (const candidate of adminNameCandidates) {
@@ -379,13 +408,29 @@ export default function LeaveApprovalModal({
     (approvedBy && approvedByLower !== 'hod' && approvedByLower !== 'secretary' ? approvedBy : null),
   ].filter(Boolean);
 
-  let hodSignature =
-    (isSecretaryFinalized && approverRoleLower === "secretary"
-      ? null
-      : selectedLeave?.approverSignature || selectedLeave?.approver_signature) ||
-    selectedLeave?.hodSignature ||
-    selectedLeave?.hod_signature ||
-    null;
+  let hodSignature = hodHasSigned
+    ? (isSecretaryFinalized && approverRoleLower === "secretary"
+      ? localSignatureFor(
+          "secretary",
+        selectedLeave?.secretaryDecidedById ?? selectedLeave?.secretary_decided_by_id,
+        null,
+        secretaryName
+      ) ||
+        selectedLeave?.secretarySignature ||
+        selectedLeave?.secretary_signature ||
+        null
+      : localSignatureFor(
+          "hod",
+          selectedLeave?.approvedById ?? selectedLeave?.approved_by_id,
+          null,
+          approvedBy
+        ) ||
+        selectedLeave?.approverSignature ||
+        selectedLeave?.approver_signature ||
+        selectedLeave?.hodSignature ||
+        selectedLeave?.hod_signature ||
+        null)
+    : null;
 
   if (!hodSignature && hodHasSigned) {
     for (const candidate of hodNameCandidates) {
@@ -672,15 +717,11 @@ export default function LeaveApprovalModal({
                       date={isSecretaryFinalized ? secretarySignedDate : hodSignedDate}
                       className="w-full mb-0.5"
                     />
-                    {isSecretaryFinalized && secretaryName && (
-                      <p className="text-[8px] font-semibold leading-tight text-[#0000FF]">
-                        {secretaryName}
-                      </p>
-                    )}
+
                     <div className="text-[9px] font-bold leading-tight print-sinhala-tamil-english print-signature-label">
-                      <p>දෙපාර්තමේන්තු ප්‍රධානියා{isSecretaryFinalized ? " / ලේකම්" : ""}</p>
-                      <p>திணைக்களத் தலைவர்{isSecretaryFinalized ? " / செயலாளர்" : ""}</p>
-                      <p>Head of Department{isSecretaryFinalized ? " / Secretary" : ""}</p>
+                      <p>දෙපාර්තමේන්තු ප්‍රධානියා{isSecretaryFinalized}</p>
+                      <p>திணைக்களத் தலைவர்{isSecretaryFinalized }</p>
+                      <p>Head of Department{isSecretaryFinalized }</p>
                     </div>
                   </div>
                 </div>

@@ -79,25 +79,41 @@ afterAll(async () => {
 describe('Secretary signature profile endpoints', () => {
   it('loads and saves the signature in the Secretary profile', async () => {
     pool.query
-      .mockResolvedValueOnce([[{ signature_image: 'saved-signature-image' }], []])
+      .mockResolvedValueOnce([[
+        {
+          signature_image: 'saved-signature-image',
+          signature_image_extracted: 'saved-transparent-signature',
+        },
+      ], []])
       .mockResolvedValueOnce([{ affectedRows: 1 }, []]);
 
     const loaded = await request('/api/auth/signature', 'GET', undefined, secretaryToken());
     const saved = await request(
       '/api/auth/signature',
       'PUT',
-      { signature: 'new-signature-image' },
+      {
+        signature: 'new-signature-image',
+        extractedSignature: 'new-transparent-signature',
+      },
       secretaryToken()
     );
 
     expect(loaded).toMatchObject({
       status: 200,
-      body: { signature: 'saved-signature-image' },
+      body: {
+        signature: 'saved-signature-image',
+        extractedSignature: 'saved-transparent-signature',
+      },
     });
     expect(saved.status).toBe(200);
     expect(pool.query.mock.calls[0][0]).toContain('FROM secretary');
     expect(pool.query.mock.calls[1][0]).toContain('UPDATE secretary');
-    expect(pool.query.mock.calls[1][1]).toEqual(['new-signature-image', 81]);
+    expect(pool.query.mock.calls[1][1]).toEqual([
+      'new-signature-image',
+      1,
+      'new-transparent-signature',
+      81,
+    ]);
   });
 
   it('saves an employee signature in the employee profile', async () => {
@@ -106,12 +122,20 @@ describe('Secretary signature profile endpoints', () => {
     const saved = await request(
       '/api/auth/signature',
       'PUT',
-      { signature: 'employee-signature-image' },
+      {
+        signature: 'employee-signature-image',
+        extractedSignature: 'employee-transparent-signature',
+      },
       employeeToken()
     );
 
     expect(saved.status).toBe(200);
     expect(pool.query.mock.calls[0][0]).toContain('UPDATE employees');
-    expect(pool.query.mock.calls[0][1]).toEqual(['employee-signature-image', 17]);
+    expect(pool.query.mock.calls[0][1]).toEqual([
+      'employee-signature-image',
+      1,
+      'employee-transparent-signature',
+      17,
+    ]);
   });
 });

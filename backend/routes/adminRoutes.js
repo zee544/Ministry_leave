@@ -364,6 +364,7 @@ const LEAVE_BASE_QUERY = `
     l.secretary_decided_by_id AS secretaryDecidedById,
     (SELECT s.name FROM secretary s WHERE s.id = l.secretary_decided_by_id LIMIT 1) AS secretaryName,
     COALESCE(
+      (SELECT s.signature_image_extracted FROM secretary s WHERE s.id = l.secretary_decided_by_id LIMIT 1),
       l.secretary_signature,
       (SELECT s.signature_image FROM secretary s WHERE s.id = l.secretary_decided_by_id LIMIT 1)
     ) AS secretarySignature,
@@ -383,6 +384,12 @@ const LEAVE_BASE_QUERY = `
     l.target_approver_role AS targetApproverRole,
     l.target_approver_email AS targetApproverEmail,
     COALESCE(
+      (SELECT h.signature_image_extracted FROM hod h WHERE h.id = l.approved_by_id AND l.approver_role = 'hod' LIMIT 1),
+      (SELECT h.signature_image_extracted FROM hod h WHERE LOWER(CONVERT(h.name USING utf8mb4)) = LOWER(CONVERT(l.approved_by USING utf8mb4)) AND l.approver_role = 'hod' AND l.approved_by_id IS NULL LIMIT 1),
+      (SELECT s.signature_image_extracted FROM secretary s WHERE s.id = l.approved_by_id AND l.approver_role = 'secretary' LIMIT 1),
+      (SELECT s.signature_image_extracted FROM secretary s WHERE LOWER(CONVERT(s.name USING utf8mb4)) = LOWER(CONVERT(l.approved_by USING utf8mb4)) AND l.approver_role = 'secretary' AND l.approved_by_id IS NULL LIMIT 1),
+      (SELECT a.signature_image_extracted FROM admins a WHERE a.id = l.approved_by_id AND l.approver_role = 'admin' LIMIT 1),
+      (SELECT a.signature_image_extracted FROM admins a WHERE LOWER(CONVERT(a.name USING utf8mb4)) = LOWER(CONVERT(l.approved_by USING utf8mb4)) AND l.approver_role = 'admin' AND l.approved_by_id IS NULL LIMIT 1),
       l.approver_signature,
       (SELECT h.signature_image FROM hod h WHERE h.id = l.approved_by_id AND l.approver_role = 'hod' LIMIT 1),
       (SELECT h.signature_image FROM hod h WHERE LOWER(CONVERT(h.name USING utf8mb4)) = LOWER(CONVERT(l.approved_by USING utf8mb4)) AND l.approver_role = 'hod' AND l.approved_by_id IS NULL LIMIT 1),
@@ -392,25 +399,37 @@ const LEAVE_BASE_QUERY = `
       (SELECT a.signature_image FROM admins a WHERE LOWER(CONVERT(a.name USING utf8mb4)) = LOWER(CONVERT(l.approved_by USING utf8mb4)) AND l.approver_role = 'admin' AND l.approved_by_id IS NULL LIMIT 1)
     ) AS approverSignature,
     COALESCE(
+      (SELECT a.signature_image_extracted FROM admins a WHERE LOWER(CONVERT(a.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1),
       l.admin_signature,
       (SELECT a.signature_image FROM admins a WHERE LOWER(CONVERT(a.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1)
     ) AS adminSignature,
     COALESCE(
+      (SELECT e.signature_image_extracted FROM employees e WHERE e.id = l.applicant_user_id AND l.applicant_role = 'employee' LIMIT 1),
+      (SELECT h.signature_image_extracted FROM hod h WHERE h.id = l.applicant_user_id AND l.applicant_role = 'hod' LIMIT 1),
+      (SELECT a.signature_image_extracted FROM admins a WHERE a.id = l.applicant_user_id AND l.applicant_role = 'admin' LIMIT 1),
+      (SELECT s.signature_image_extracted FROM secretary s WHERE s.id = l.applicant_user_id AND l.applicant_role = 'secretary' LIMIT 1),
+      (SELECT eo.signature_image_extracted FROM executive_officers eo WHERE eo.id = l.applicant_user_id AND l.applicant_role = 'executive_officer' LIMIT 1),
       l.applicant_signature,
       (SELECT e.signature_image FROM employees e WHERE e.id = l.applicant_user_id AND l.applicant_role = 'employee' LIMIT 1),
       (SELECT h.signature_image FROM hod h WHERE h.id = l.applicant_user_id AND l.applicant_role = 'hod' LIMIT 1),
       (SELECT a.signature_image FROM admins a WHERE a.id = l.applicant_user_id AND l.applicant_role = 'admin' LIMIT 1),
-      (SELECT s.signature_image FROM secretary s WHERE s.id = l.applicant_user_id AND l.applicant_role = 'secretary' LIMIT 1)
+      (SELECT s.signature_image FROM secretary s WHERE s.id = l.applicant_user_id AND l.applicant_role = 'secretary' LIMIT 1),
+      (SELECT eo.signature_image FROM executive_officers eo WHERE eo.id = l.applicant_user_id AND l.applicant_role = 'executive_officer' LIMIT 1)
     ) AS applicantSignature,
     COALESCE(
+      (SELECT e.signature_image_extracted FROM employees e WHERE e.id = l.acting_officer_user_id AND l.acting_officer_role = 'employee' LIMIT 1),
+      (SELECT h.signature_image_extracted FROM hod h WHERE h.id = l.acting_officer_user_id AND l.acting_officer_role = 'hod' LIMIT 1),
+      (SELECT a.signature_image_extracted FROM admins a WHERE a.id = l.acting_officer_user_id AND l.acting_officer_role = 'admin' LIMIT 1),
+      (SELECT s.signature_image_extracted FROM secretary s WHERE s.id = l.acting_officer_user_id AND l.acting_officer_role = 'secretary' LIMIT 1),
+      (SELECT eo.signature_image_extracted FROM executive_officers eo WHERE eo.id = l.acting_officer_user_id AND l.acting_officer_role = 'executive_officer' LIMIT 1),
       l.acting_officer_signature,
       (SELECT e.signature_image FROM employees e WHERE e.id = l.acting_officer_user_id AND l.acting_officer_role = 'employee' LIMIT 1),
       (SELECT h.signature_image FROM hod h WHERE h.id = l.acting_officer_user_id AND l.acting_officer_role = 'hod' LIMIT 1),
       (SELECT a.signature_image FROM admins a WHERE a.id = l.acting_officer_user_id AND l.acting_officer_role = 'admin' LIMIT 1),
       (SELECT s.signature_image FROM secretary s WHERE s.id = l.acting_officer_user_id AND l.acting_officer_role = 'secretary' LIMIT 1),
       (SELECT eo.signature_image FROM executive_officers eo WHERE eo.id = l.acting_officer_user_id AND l.acting_officer_role = 'executive_officer' LIMIT 1),
-      (SELECT h.signature_image FROM hod h WHERE LOWER(CONVERT(h.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(h.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1),
-      (SELECT e.signature_image FROM employees e WHERE LOWER(CONVERT(e.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(e.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1)
+      (SELECT COALESCE(h.signature_image_extracted, h.signature_image) FROM hod h WHERE LOWER(CONVERT(h.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(h.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1),
+      (SELECT COALESCE(e.signature_image_extracted, e.signature_image) FROM employees e WHERE LOWER(CONVERT(e.name USING utf8mb4)) = LOWER(CONVERT(l.acting_officer USING utf8mb4)) AND LOWER(CONVERT(e.division USING utf8mb4)) = LOWER(CONVERT(l.division USING utf8mb4)) LIMIT 1)
     ) AS actingOfficerSignature
   FROM leaves l
 `;
@@ -603,7 +622,7 @@ router.get('/leaves/all', verifyToken, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `${LEAVE_BASE_QUERY} ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`
+      `${LEAVE_BASE_QUERY} ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`
     );
 
     return res.status(200).json(rows);
@@ -625,7 +644,7 @@ router.get('/leaves/division', verifyToken, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `${LEAVE_BASE_QUERY} WHERE l.division = ? ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`,
+      `${LEAVE_BASE_QUERY} WHERE l.division = ? ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
       [division]
     );
 
@@ -773,7 +792,9 @@ router.put('/leaves/:id/secretary-approve', verifyToken, async (req, res) => {
     }
 
     const [secretaryRows] = await pool.query(
-      'SELECT name, email, signature_image FROM secretary WHERE id = ? LIMIT 1',
+      `SELECT name, email,
+              COALESCE(signature_image_extracted, signature_image) AS signature_image
+       FROM secretary WHERE id = ? LIMIT 1`,
       [userId]
     );
     if (!secretaryRows.length) {
@@ -921,7 +942,10 @@ router.post('/leaves', verifyToken, async (req, res) => {
       'employees';
 
     const profileQuery = pool.query(
-      `SELECT id, name, email, ${applicantRole === 'secretary' ? "'Ministry' as division" : "COALESCE(division, 'Ministry') as division"}, signature_image FROM ${profileTable} WHERE id = ? LIMIT 1`,
+      `SELECT id, name, email,
+              ${applicantRole === 'secretary' ? "'Ministry' as division" : "COALESCE(division, 'Ministry') as division"},
+              COALESCE(signature_image_extracted, signature_image) AS signature_image
+       FROM ${profileTable} WHERE id = ? LIMIT 1`,
       [applicantId]
     );
     const workingDaysQuery = type === 'Half-day'
@@ -1178,7 +1202,10 @@ router.put('/leaves/:id/acting-confirm', verifyToken, async (req, res) => {
       pool.query('SELECT * FROM leaves WHERE id = ?', [leaveId]),
       actingProfileTable
         ? pool.query(
-          `SELECT name, signature_image${actingOfficerRole === 'secretary' ? '' : ', division'} FROM ${actingProfileTable} WHERE id = ? LIMIT 1`,
+          `SELECT name,
+                  COALESCE(signature_image_extracted, signature_image) AS signature_image
+                  ${actingOfficerRole === 'secretary' ? '' : ', division'}
+           FROM ${actingProfileTable} WHERE id = ? LIMIT 1`,
           [req.user.id]
         )
         : Promise.resolve([[], []]),
@@ -1530,7 +1557,7 @@ router.get('/leaves/employee', verifyToken, async (req, res) => {
     const [rows] = await pool.query(
       `${LEAVE_BASE_QUERY}
        WHERE l.applicant_user_id = ? AND l.applicant_role = ?
-       ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`,
+       ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
       [applicantId, applicantRole]
     );
 
@@ -1587,7 +1614,7 @@ router.get('/leaves/acting-officer', verifyToken, async (req, res) => {
              AND (? = 'secretary' OR LOWER(TRIM(l.division)) = LOWER(TRIM(?)))
            )
          )
-       ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`,
+       ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
       [req.user.id, actingOfficerRole, actingOfficerName, actingOfficerRole, actingOfficerDivision || '']
     );
 
@@ -1620,7 +1647,7 @@ router.get('/hod/leaves', verifyToken, requireHOD, async (req, res) => {
          OR (l.target_approver_email IS NOT NULL AND LOWER(l.target_approver_email) = ?)
        )
        AND l.applicant_user_id != ?
-       ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`,
+       ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
       [division, userId, userId, userEmail, userId]
     );
 
@@ -1648,7 +1675,9 @@ router.put('/leaves/:id/hod-approve', verifyToken, requireHOD, async (req, res) 
   try {
     const [approverProfile, check] = await Promise.all([
       pool.query(
-        `SELECT email, division, signature_image FROM hod WHERE id = ? LIMIT 1`,
+        `SELECT email, division,
+                COALESCE(signature_image_extracted, signature_image) AS signature_image
+         FROM hod WHERE id = ? LIMIT 1`,
         [userId]
       ),
       pool.query(
@@ -2327,7 +2356,7 @@ router.get('/leaves', async (req, res) => {
        WHERE l.division = ?
          AND (l.applicant_role IS NULL OR l.applicant_role = 'employee')
          AND (l.applicant_role IS NULL OR l.admin_approval_required = 1)
-       ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC`,
+       ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC`,
       [division]
     );
 
@@ -2361,7 +2390,8 @@ router.put('/leaves/:id/status', async (req, res) => {
               DATE_FORMAT(from_date, '%Y-%m-%d') AS \`from\`,
               DATE_FORMAT(to_date, '%Y-%m-%d') AS \`to\`,
               no_of_days AS noOfDays, acting_officer AS actingOfficer, reason, address,
-              (SELECT signature_image FROM admins WHERE id = ? LIMIT 1) AS adminSignature
+              (SELECT COALESCE(signature_image_extracted, signature_image)
+               FROM admins WHERE id = ? LIMIT 1) AS adminSignature
        FROM leaves WHERE id = ? AND division = ?`,
       [req.user.id, leaveId, division]
     );

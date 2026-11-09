@@ -96,12 +96,15 @@ function SecretaryDashboard() {
     ...secretaryDeclinedLeaves,
   ];
 
-  // ✅ අලුත්ම ලීව් එක මුලට එන විදිහට (Latest First) පේළි පිළිවෙල හැදීම
+  const submissionTimestamp = (leave) => {
+    const value = leave.submittedAt || leave.createdAt || leave.appliedOn || leave.applied_on;
+    const parsed = new Date(String(value || "").replace(" ", "T")).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
   combinedDashboardLeaves.sort((a, b) => {
-    const dateA = new Date(String(a.appliedOn || a.applied_on || "").replace(" ", "T")).getTime();
-    const dateB = new Date(String(b.appliedOn || b.applied_on || "").replace(" ", "T")).getTime();
-    // අගයන් වැඩි එක (අලුත්ම දිනය) මුලට එන ලෙස
-    return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+    return submissionTimestamp(b) - submissionTimestamp(a) ||
+      Number(b.id || 0) - Number(a.id || 0);
   });
 
   const allLeaves = rawLeaves;

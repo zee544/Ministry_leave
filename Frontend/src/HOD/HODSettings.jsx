@@ -5,9 +5,10 @@ import SignatureUpload from "../Components/SignatureUpload.jsx";
 import { apiUrl } from "../api.js";
 import ApprovalSettings from "../Components/ApprovalSettings.jsx";
 import { useLeaves } from "../hooks/LeaveContext.jsx";
+
 function HODSettings() {
-const { currentUser, leaveEntitlements } = useUser();
-  const { getSignature } = useSignatures();
+  const { currentUser, leaveEntitlements } = useUser();
+  const { getSourceSignature, getExtractedSignature } = useSignatures();
   const { leaves } = useLeaves(); 
 
   // Use a user-ID-scoped key so each HOD's signature is stored separately in localStorage
@@ -16,7 +17,7 @@ const { currentUser, leaveEntitlements } = useUser();
 
   const [profile, setProfile] = useState(null);
   const [adminInfo, setAdminInfo] = useState(null);
-  const [employees, setEmployees] = useState([]);
+  const [, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingSignature, setSavingSignature] = useState(false);
@@ -158,15 +159,22 @@ const { currentUser, leaveEntitlements } = useUser();
     setSavingSignature(true);
     try {
       const token = localStorage.getItem("token");
-      // Use the user-ID-scoped key so each HOD saves their own signature
-      const signature = getSignature(signatureKey);
+      const signature = getSourceSignature(signatureKey);
+      const extractedSignature = getExtractedSignature(signatureKey);
+      if (!signature) {
+        showToast("Upload a signature before saving.", "error");
+        return;
+      }
       const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ signature: signature || null }),
+        body: JSON.stringify({
+          signature: signature || null,
+          extractedSignature: extractedSignature || null,
+        }),
       });
       const data = await res.json();
       if (res.ok) showToast("Signature saved successfully!", "success");
@@ -256,7 +264,7 @@ const { currentUser, leaveEntitlements } = useUser();
     errorsObj[field]
       ? "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-red-400 dark:border-red-500 bg-red-50/40 dark:bg-red-900/20 text-xs sm:text-sm text-gray-800 dark:text-white outline-none focus:ring-2 focus:ring-red-400/40 transition"
       : "w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs sm:text-sm text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:border-[#0000A0] dark:focus:border-blue-500 focus:ring-2 focus:ring-[#0000A0]/30 dark:focus:ring-blue-500/30 transition";
-  // ============ LEAVE BALANCE CALCULATIONS ============
+
   const currentYear = new Date().getFullYear();
 
   const myLeaves = (leaves || []).filter((l) => {
@@ -320,14 +328,15 @@ const { currentUser, leaveEntitlements } = useUser();
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-500 dark:text-gray-400"></div>
-
-    
+      <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-gray-500 dark:text-gray-400">
+        <div className="w-8 h-8 border-4 border-[#0000A0] border-t-transparent rounded-full animate-spin mb-2"></div>
+        <span className="text-xs">Loading Settings...</span>
+      </div>
     );
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4">
       {/* ===== Toast ===== */}
       {toast && (
         <div
@@ -340,13 +349,16 @@ const { currentUser, leaveEntitlements } = useUser();
         </div>
       )}
 
-      <div className="max-w-3xl">
-        <div className="space-y-4 sm:space-y-6">
+      {/* 2-Column Responsive Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        
+        {/* ================= LEFT SIDE COLUMN ================= */}
+        <div className="space-y-6">
           {/* ============ My Profile ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
               <div className="min-w-0">
-                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+                <h2 className="text-base sm:text-xl font-bold underline text-gray-900 dark:text-white">
                   My Profile
                 </h2>
               </div>
@@ -392,8 +404,8 @@ const { currentUser, leaveEntitlements } = useUser();
                     </label>
                     <input
                       type="text"
-                      value={editForm.name}
-                      onChange={(e) => handleEditChange("name", e.target.value)}
+                      value={profile?.name || ""}
+                      disabled
                       className={inputClass("name", editErrors)}
                       placeholder="Enter full name"
                     />
@@ -446,154 +458,55 @@ const { currentUser, leaveEntitlements } = useUser();
             </div>
           </div>
 
-          {/* ============ Division Information ============ */}
+          {/* ============ Leave Balance ============ */} 
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
-                Division Information
+              <h2 className="text-base sm:text-xl font-bold underline text-gray-900 dark:text-white">
+                Leave Balance ({currentYear})
               </h2>
               <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Your assigned division and ministry details.
+                Your remaining leave entitlements for this year.
               </p>
             </div>
 
-            <div className="px-4 sm:px-6 py-4 sm:py-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
-                <InfoRow
-                  label="Division"
-                  value={profile?.division || currentUser?.division}
-                />
-                <InfoRow
-                  label="Ministry"
-                  value="Ministry of Fisheries, Aquatic and Ocean Resources"
-                />
-              </div>
-            </div>
-          </div>
-          {/* ============ Leave Balance ============ */}
-<div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
-    <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
-      Leave Balance ({currentYear})
-    </h2>
-    <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-      Your remaining leave entitlements for this year.
-    </p>
-  </div>
-
-  <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-3.5 sm:space-y-4">
-    {balanceRows.map((b) => (
-      <div key={b.label}>
-        {b.isHalfDay ? (
-          <div className="flex justify-between items-center">
-            <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-              {b.label}
-            </span>
-            <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
-              {b.used} time{b.used !== 1 ? "s" : ""} taken
-            </span>
-          </div>
-        ) : (
-          <>
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                {b.label}
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
-                {b.remaining} / {b.total} days
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div
-                className={`${b.color} h-2 rounded-full transition-all`}
-                style={{ width: `${b.pct}%` }}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    ))}
-  </div>
-</div>
-
-          {/* ============ Admin Information ============ */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
-              <div className="min-w-0">
-                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white truncate">
-                  {adminInfo?.division} CC
-                </h2>
-                <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  The administrator assigned to your division.
-                </p>
-              </div>
-            </div>
-
-            <div className="px-4 sm:px-6 py-4 sm:py-5">
-              {adminInfo ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
-                  <InfoRow label="Name" value={adminInfo.name} />
-                  <InfoRow label="Email" value={adminInfo.email} />
-                  <InfoRow label="Designation" value={adminInfo.designation} />
-                  <InfoRow label="Employee ID" value={adminInfo.employeeId} />
+            <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-3.5 sm:space-y-4">
+              {balanceRows.map((b) => (
+                <div key={b.label}>
+                  {b.isHalfDay ? (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                        {b.label}
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+                        {b.used} time{b.used !== 1 ? "s" : ""} taken
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                          {b.label}
+                        </span>
+                        <span className="text-xs sm:text-sm font-bold text-gray-800 dark:text-white">
+                          {b.remaining} / {b.total} days
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className={`${b.color} h-2 rounded-full transition-all`}
+                          style={{ width: `${b.pct}%` }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 italic">
-                  No Admin registered for your division yet.
-                </div>
-              )}
+              ))}
             </div>
           </div>
-
-          {/* ============ HOD Signature ============ */}
-          <ApprovalSettings role="hod" />
-
-          {/* ============ HOD Signature ============ */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
-              <div className="min-w-0">
-                <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
-                  HOD Signature
-                </h2>
-              </div>
-              <span className="shrink-0 text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-1.5 sm:px-2 py-0.5 rounded">
-                Required
-              </span>
-            </div>
-
-            <div className="px-4 sm:px-6 py-4 sm:py-5">
-              <SignatureUpload signatureKey={signatureKey} label="HOD Signature" />
-              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3">
-                This signature will be automatically applied to all printed
-                leave forms as the Head of Division.
-              </p>
-            </div>
-
-            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 flex justify-end">
-              <button
-                onClick={handleSaveSignature}
-                disabled={savingSignature}
-                className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {savingSignature ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  "Save Signature"
-                )}
-              </button>
-            </div>
-          </div>
-
           {/* ============ Security ============ */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="text-base sm:text-xl underline decoration-[#000000] dark:decoration-white font-bold text-gray-900 dark:text-white">
+              <h2 className="text-base sm:text-xl font-bold underline text-gray-900 dark:text-white">
                 Security
               </h2>
               <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -634,8 +547,64 @@ const { currentUser, leaveEntitlements } = useUser();
             </div>
           </div>
         </div>
+
+        {/* ================= RIGHT SIDE COLUMN ================= */}
+        <div className="space-y-6">
+          
+
+         
+
+          {/* ============ Approval Settings ============ */}
+          <ApprovalSettings role="hod" />
+
+          {/* ============ HOD Signature ============ */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl font-bold underline text-gray-900 dark:text-white">
+                  HOD Signature
+                </h2>
+              </div>
+              <span className="shrink-0 text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 px-1.5 sm:px-2 py-0.5 rounded">
+                Required
+              </span>
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 sm:py-5">
+              <SignatureUpload signatureKey={signatureKey} label="HOD Signature" />
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3">
+                This signature will be automatically applied to all printed
+                leave forms as the Head of Division.
+              </p>
+            </div>
+
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+              <button
+                onClick={handleSaveSignature}
+                disabled={savingSignature}
+                className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#0000A0] dark:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#000080] dark:hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {savingSignature ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  "Save Signature"
+                )}
+              </button>
+            </div>
+          </div>
+
+          
+        </div>
+
       </div>
 
+      {/* ===== Password Change Modal ===== */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/60 dark:bg-black/70">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[92vh] overflow-y-auto">

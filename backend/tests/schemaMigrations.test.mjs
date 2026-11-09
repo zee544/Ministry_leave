@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { ensureSecretaryDecisionColumns } = require('../utils/schemaMigrations');
+const {
+  ensureSecretaryDecisionColumns,
+  ensureExtractedSignatureColumns,
+} = require('../utils/schemaMigrations');
 
 describe('Secretary decision schema migration', () => {
   it('adds only missing decision-history columns to existing databases', async () => {
@@ -33,5 +36,24 @@ describe('Secretary decision schema migration', () => {
     await ensureSecretaryDecisionColumns({ query });
 
     expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Extracted signature schema migration', () => {
+  it('adds a separate extracted-signature field without replacing source signatures', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([[{ TABLE_NAME: 'employees', COLUMN_NAME: 'signature_image_extracted' }], []])
+      .mockResolvedValue([{ affectedRows: 0 }, []]);
+
+    await ensureExtractedSignatureColumns({ query });
+
+    expect(query).toHaveBeenCalledTimes(5);
+    expect(query.mock.calls[0][0]).toContain("COLUMN_NAME = 'signature_image_extracted'");
+    expect(query.mock.calls.slice(1).map(([sql]) => sql)).toEqual([
+      'ALTER TABLE `admins` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
+      'ALTER TABLE `hod` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
+      'ALTER TABLE `executive_officers` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
+      'ALTER TABLE `secretary` ADD COLUMN `signature_image_extracted` MEDIUMTEXT NULL',
+    ]);
   });
 });

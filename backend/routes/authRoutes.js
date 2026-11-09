@@ -941,6 +941,7 @@ router.put('/profile', verifyToken, async (req, res) => {
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
     else if (role === 'secretary') tableName = 'secretary';
+    else if (role === 'executive_officer') tableName = 'executive_officers';
     else tableName = 'employees';
 
     const [currentProfileRows] = await pool.query(
@@ -1096,15 +1097,18 @@ router.get('/signature', verifyToken, async (req, res) => {
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
     else if (role === 'secretary') tableName = 'secretary';
+    else if (role === 'executive_officer') tableName = 'executive_officers';
     else tableName = 'employees';
 
     const [rows] = await pool.query(
-      `SELECT signature_image FROM ${tableName} WHERE id = ? LIMIT 1`,
+      `SELECT signature_image, signature_image_extracted
+       FROM ${tableName} WHERE id = ? LIMIT 1`,
       [userId]
     );
 
     return res.status(200).json({
       signature: rows[0]?.signature_image || null,
+      extractedSignature: rows[0]?.signature_image_extracted || null,
     });
   } catch (error) {
     console.error('[Auth Error] GET /signature:', error);
@@ -1121,6 +1125,13 @@ router.put('/signature', verifyToken, async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
   const { signature } = req.body;
+  const hasExtractedSignature = Object.prototype.hasOwnProperty.call(
+    req.body,
+    'extractedSignature'
+  );
+  const extractedSignature = hasExtractedSignature
+    ? req.body.extractedSignature || null
+    : null;
 
   if (signature === undefined) {
     return res.status(400).json({ message: 'Signature field is required.' });
@@ -1131,11 +1142,15 @@ router.put('/signature', verifyToken, async (req, res) => {
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
     else if (role === 'secretary') tableName = 'secretary';
+    else if (role === 'executive_officer') tableName = 'executive_officers';
     else tableName = 'employees';
 
     await pool.query(
-      `UPDATE ${tableName} SET signature_image = ? WHERE id = ?`,
-      [signature || null, userId]
+      `UPDATE ${tableName}
+       SET signature_image = ?,
+           signature_image_extracted = IF(?, ?, signature_image_extracted)
+       WHERE id = ?`,
+      [signature || null, hasExtractedSignature ? 1 : 0, extractedSignature, userId]
     );
 
     return res.status(200).json({ message: 'Signature saved successfully.' });

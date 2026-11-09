@@ -54,12 +54,27 @@ function ActingApprovals() {
         currentUser.id
     );
 
-    const pendingConfirmations = myAssignments.filter(
-        (l) => l.status === "Pending Acting Officer"
+    // ✅ අලුත්ම එක මුලට එන විදිහට පේළි පිළිවෙල හැදීම (Sorting)
+    const sortLatestFirst = (items) => {
+        return [...items].sort((a, b) => {
+            const dateA = new Date(a.submittedAt || a.createdAt || a.appliedOn || 0).getTime() || 0;
+            const dateB = new Date(b.submittedAt || b.createdAt || b.appliedOn || 0).getTime() || 0;
+            
+            // දිනය වෙනස් නම්, අලුත්ම දිනය මුලට එන්න
+            if (dateA !== dateB) {
+                return dateB - dateA;
+            }
+            // දිනය එකම නම්, ID එක වැඩි එක (අලුත්ම එක) මුලට එන්න
+            return Number(b.id || 0) - Number(a.id || 0);
+        });
+    };
+
+    const pendingConfirmations = sortLatestFirst(
+        myAssignments.filter((l) => l.status === "Pending Acting Officer")
     );
 
-    const handledAssignments = myAssignments.filter(
-        (l) => l.status !== "Pending Acting Officer"
+    const handledAssignments = sortLatestFirst(
+        myAssignments.filter((l) => l.status !== "Pending Acting Officer")
     );
 
     const askConfirm = (leave) => setConfirmModal({ open: true, leave, action: "confirm" });

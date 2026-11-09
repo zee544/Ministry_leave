@@ -10,7 +10,10 @@ const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const { router: notificationsStreamRouter } = require('./routes/notificationsStream');
 const pool = require('./config/db');
-const { ensureSecretaryDecisionColumns } = require('./utils/schemaMigrations');
+const {
+  ensureSecretaryDecisionColumns,
+  ensureExtractedSignatureColumns,
+} = require('./utils/schemaMigrations');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,8 +25,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -51,6 +54,7 @@ app.use('/api/*', (req, res) => {
 async function startServer() {
   try {
     await ensureSecretaryDecisionColumns(pool);
+    await ensureExtractedSignatureColumns(pool);
   } catch (error) {
     console.error(
       `[DB Migration] Failed to prepare leave decision columns (${error.code || 'UNKNOWN'}).`

@@ -5,7 +5,7 @@ import { useSignatures } from "../hooks/SignatureContext.jsx";
 import { apiUrl } from "../api.js";
 function Settings() {
   const { currentUser } = useUser();
-  const { getSignature } = useSignatures();
+  const { getSourceSignature, getExtractedSignature } = useSignatures();
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
@@ -19,7 +19,16 @@ function Settings() {
   const [toastType, setToastType] = useState("success");
   const [savingSignature, setSavingSignature] = useState(false);
 
-  const handleSaveSignature = async (signature = getSignature(currentUser?.name)) => {
+  const handleSaveSignature = async (
+    signature = getSourceSignature(currentUser?.name),
+    extractedSignature = getExtractedSignature(currentUser?.name),
+    allowEmpty = false
+  ) => {
+    if (!signature && !allowEmpty) {
+      showToast("Upload a signature before saving.", "error");
+      return false;
+    }
+
     setSavingSignature(true);
     try {
       const token = localStorage.getItem("token");
@@ -34,7 +43,10 @@ function Settings() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ signature: signature || null }),
+        body: JSON.stringify({
+          signature: signature || null,
+          extractedSignature: extractedSignature || null,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));

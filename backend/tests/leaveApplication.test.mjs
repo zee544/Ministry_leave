@@ -401,6 +401,7 @@ describe('leave application endpoint', () => {
     expect(sql).toContain('l.acting_officer_user_id = ? AND l.acting_officer_role = ?');
     expect(sql).toContain("l.acting_officer_user_id IS NULL");
     expect(sql).toContain("LOWER(TRIM(l.division)) = LOWER(TRIM(?))");
+    expect(sql).toContain('ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC');
     expect(params).toEqual([17, 'employee', 'Test Employee', 'employee', 'Accounts']);
   });
 
@@ -449,6 +450,7 @@ describe('leave application endpoint', () => {
     expect(response.status).toBe(200);
     const [selectSql, selectValues] = query.mock.calls[0];
     expect(selectSql).toContain('WHERE l.applicant_user_id = ? AND l.applicant_role = ?');
+    expect(selectSql).toContain('ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC');
     expect(selectValues).toEqual([17, 'employee']);
   });
 
@@ -498,7 +500,7 @@ describe('leave application endpoint', () => {
           target_approver_role: 'hod',
         }], []];
       }
-      if (sql.includes('SELECT name, signature_image')) {
+      if (sql.includes('SELECT name,') && sql.includes('signature_image')) {
         return [[{ name: 'Acting Officer', signature_image: 'acting-signature', division: 'Accounts' }], []];
       }
       if (sql.includes('SELECT id, email FROM admins')) {
@@ -549,7 +551,7 @@ describe('leave application endpoint', () => {
           target_approver_role: 'hod',
         }], []];
       }
-      if (sql.includes('SELECT name, signature_image')) {
+      if (sql.includes('SELECT name,') && sql.includes('signature_image')) {
         return [[{ name: 'Acting Officer', signature_image: 'acting-signature', division: 'Accounts' }], []];
       }
       if (sql.includes('UPDATE leaves')) return [{ affectedRows: 1 }, []];
@@ -692,14 +694,14 @@ describe('leave application endpoint', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('orders Secretary leave records FIFO by submission timestamp and request ID', async () => {
+  it('orders Secretary leave records newest-first by submission timestamp and request ID', async () => {
     const query = vi.spyOn(pool, 'query').mockResolvedValue([[], []]);
     const response = await get('/api/admin/leaves/all', secretaryToken());
 
     expect(response.status).toBe(200);
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0][0]).toContain(
-      'ORDER BY COALESCE(l.created_at, l.applied_on) ASC, l.id ASC'
+      'ORDER BY COALESCE(l.created_at, l.applied_on) DESC, l.id DESC'
     );
   });
 
