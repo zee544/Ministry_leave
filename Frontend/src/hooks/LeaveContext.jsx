@@ -3,12 +3,16 @@ import { apiUrl } from "../api.js";
 
 const LeaveContext = createContext();
 
-const sortByAppliedDateDesc = (items) => {
-  return [...items].sort((a, b) => {
-    const dateA = new Date(a.appliedOn || a.from || 0).getTime();
-    const dateB = new Date(b.appliedOn || b.from || 0).getTime();
-    return dateB - dateA;
-  });
+const sortBySubmissionFifo = (items) => {
+  const timestamp = (leave) => {
+    const submittedAt =
+      leave.submittedAt || leave.createdAt || leave.appliedOn || 0;
+    const parsed = new Date(String(submittedAt).replace(" ", "T")).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  return [...items].sort((a, b) =>
+    timestamp(a) - timestamp(b) || Number(a.id || 0) - Number(b.id || 0)
+  );
 };
 
 const normalizeLeave = (leave) => ({
@@ -19,14 +23,20 @@ const normalizeLeave = (leave) => ({
   actingOfficerRole: leave.actingOfficerRole ?? leave.acting_officer_role,
   actingOfficerConfirmed:
     leave.acting_officer_confirmed ?? leave.actingOfficerConfirmed ?? false,
+  adminApprovalRequired:
+    leave.adminApprovalRequired ?? leave.admin_approval_required ?? false,
   approvedBy: leave.approvedBy ?? leave.approved_by ?? null,
   approverRole: leave.approverRole ?? leave.approver_role ?? null,
+  adminSignature: leave.adminSignature ?? leave.admin_signature ?? null,
+  recommendedByAdmin:
+    leave.recommendedByAdmin ?? leave.recommended_by_admin ?? false,
 });
 
 const INITIAL_LEAVES = [];
 
 export function LeaveProvider({ children }) {
   const [leaves, setLeaves] = useState(INITIAL_LEAVES);
+  const [actingOfficerLeaves, setActingOfficerLeaves] = useState(INITIAL_LEAVES);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const actingRequestRef = useRef(null);
@@ -37,6 +47,9 @@ export function LeaveProvider({ children }) {
     const token = localStorage.getItem("token");
     if (!token) {
       setLeaves([]);
+      setActingOfficerLeaves([]);
+      actingFetchedAtRef.current = 0;
+      actingFetchedUserRef.current = "";
       return;
     }
 
@@ -77,11 +90,17 @@ export function LeaveProvider({ children }) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         setLeaves([]);
+        setActingOfficerLeaves([]);
+        actingFetchedAtRef.current = 0;
+        actingFetchedUserRef.current = "";
         setIsLoading(false);
         return;
       }
       if (res.status === 403) {
         setLeaves([]);
+        setActingOfficerLeaves([]);
+        actingFetchedAtRef.current = 0;
+        actingFetchedUserRef.current = "";
         setIsLoading(false);
         return;
       }
@@ -120,7 +139,7 @@ export function LeaveProvider({ children }) {
 
         if (allLeaves.length > 0) {
           const mapped = allLeaves.map(normalizeLeave);
-          setLeaves(sortByAppliedDateDesc(mapped));
+          setLeaves(sortBySubmissionFifo(mapped));
         } else {
           setLeaves([]);
         }
@@ -139,8 +158,19 @@ export function LeaveProvider({ children }) {
   const fetchActingOfficerLeaves = useCallback(async ({ force = false } = {}) => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user") || "null");
-    if (!token || !user?.id) return;
+    if (!token || !user?.id) {
+      setActingOfficerLeaves([]);
+      actingFetchedAtRef.current = 0;
+      actingFetchedUserRef.current = "";
+      return;
+    }
     const userKey = `${user.role}:${user.id}`;
+
+    if (actingFetchedUserRef.current && actingFetchedUserRef.current !== userKey) {
+      setActingOfficerLeaves([]);
+      actingFetchedAtRef.current = 0;
+      actingFetchedUserRef.current = "";
+    }
 
     if (actingRequestRef.current?.userKey === userKey) {
       return force
@@ -167,34 +197,20 @@ export function LeaveProvider({ children }) {
           "Content-Type": "application/json",
         },
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const mapped = data.map(normalizeLeave);
-          setLeaves((prev) => {
-            const fetchedById = new Map(mapped.map((l) => [String(l.id), l]));
-            const normalize = (value) => String(value || "").trim().toLowerCase();
-            const belongsToCurrentActor = (leave) => {
-              const assignedId = leave.actingOfficerUserId ?? leave.acting_officer_user_id;
-              const assignedRole = leave.actingOfficerRole ?? leave.acting_officer_role;
-              if (assignedId != null && assignedRole) {
-                return Number(assignedId) === Number(user?.id) && assignedRole === user?.role;
-              }
-              return normalize(leave.actingOfficer ?? leave.acting_officer) === normalize(user?.name) &&
-                (user?.role === "secretary" || normalize(leave.division) === normalize(user?.division));
-            };
-            const retained = prev.filter((leave) => !belongsToCurrentActor(leave));
-            const merged = retained.map((l) => fetchedById.get(String(l.id)) || l);
-            const existingIds = new Set(merged.map((l) => String(l.id)));
-            merged.push(...mapped.filter((l) => !existingIds.has(String(l.id))));
-            return sortByAppliedDateDesc(merged);
-          });
-        }
-        actingFetchedAtRef.current = Date.now();
-        actingFetchedUserRef.current = userKey;
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || `Failed to load Acting Approvals (${res.status}).`);
       }
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        throw new Error("The Acting Approvals response was not a leave list.");
+      }
+      setActingOfficerLeaves(sortBySubmissionFifo(data.map(normalizeLeave)));
+      actingFetchedAtRef.current = Date.now();
+      actingFetchedUserRef.current = userKey;
     } catch (err) {
       console.warn("[Acting Leaves] Error:", err.message);
+      throw err;
     } finally {
       finishRequest();
       if (actingRequestRef.current?.promise === requestPromise) {
@@ -206,7 +222,10 @@ export function LeaveProvider({ children }) {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (token) fetchLeaves();
-    else setLeaves([]);
+    else {
+      setLeaves([]);
+      setActingOfficerLeaves([]);
+    }
   }, [fetchLeaves]);
 
   useEffect(() => {
@@ -214,7 +233,12 @@ export function LeaveProvider({ children }) {
       if (e.key === "token" || e.key === "user") {
         const token = localStorage.getItem("token");
         if (token) fetchLeaves();
-        else setLeaves([]);
+        else {
+          setLeaves([]);
+          setActingOfficerLeaves([]);
+          actingFetchedAtRef.current = 0;
+          actingFetchedUserRef.current = "";
+        }
       }
     };
     window.addEventListener("storage", handleStorageChange);
@@ -224,10 +248,18 @@ export function LeaveProvider({ children }) {
   useEffect(() => {
     const handleLogin = () => {
       const token = localStorage.getItem("token");
-      if (token) fetchLeaves();
+      if (token) {
+        setActingOfficerLeaves([]);
+        actingFetchedAtRef.current = 0;
+        actingFetchedUserRef.current = "";
+        fetchLeaves();
+      }
     };
     const handleLogout = () => {
       setLeaves([]);
+      setActingOfficerLeaves([]);
+      actingFetchedAtRef.current = 0;
+      actingFetchedUserRef.current = "";
     };
     window.addEventListener("auth:login", handleLogin);
     window.addEventListener("auth:logout", handleLogout);
@@ -277,13 +309,16 @@ export function LeaveProvider({ children }) {
 
       if (response.ok) {
         const data = await response.json();
+        const submittedAt = new Date().toISOString();
         savedLeave = {
           id: data.leaveId,
           ...leaveData,
           applicantUserId: leaveData.applicantUserId,
           applicantRole: leaveData.applicantRole,
           status: data.status,
-          appliedOn: new Date().toISOString().split("T")[0],
+          appliedOn: submittedAt.split("T")[0],
+          submittedAt,
+          createdAt: submittedAt,
         };
       } else {
         const data = await response.json().catch(() => ({}));
@@ -297,14 +332,17 @@ export function LeaveProvider({ children }) {
     }
 
     if (!savedLeave) {
+      const submittedAt = new Date().toISOString();
       savedLeave = {
         id: Date.now(),
         ...leaveData,
-        appliedOn: new Date().toISOString().split("T")[0],
+        appliedOn: submittedAt.split("T")[0],
+        submittedAt,
+        createdAt: submittedAt,
       };
     }
 
-    setLeaves((prev) => sortByAppliedDateDesc([savedLeave, ...prev]));
+    setLeaves((prev) => sortBySubmissionFifo([savedLeave, ...prev]));
     return savedLeave;
   }, []);
 
@@ -331,25 +369,47 @@ export function LeaveProvider({ children }) {
       }
 
       const data = await response.json();
-      await Promise.all([
-        fetchLeaves(),
-        fetchActingOfficerLeaves({ force: true }),
-      ]);
-      if (data.leave) {
-        const updatedLeave = normalizeLeave(data.leave);
-        setLeaves((prev) =>
-          sortByAppliedDateDesc(
-            prev.map((leave) =>
-              String(leave.id) === String(updatedLeave.id)
-                ? { ...leave, ...updatedLeave }
-                : leave
-            )
+      const declinedBy = action === "decline" ? "Acting Officer" : null;
+      const declineReason = action === "decline" ? (reason?.trim() || null) : null;
+      setLeaves((prev) =>
+        sortBySubmissionFifo(
+          prev.map((leave) =>
+            String(leave.id) === String(id)
+              ? {
+                  ...leave,
+                  status: data.status || (action === "confirm" ? "Pending" : "Declined"),
+                  actingOfficerConfirmed: action === "confirm",
+                  acting_officer_confirmed: action === "confirm",
+                  declinedBy,
+                  declined_by: declinedBy,
+                  declineReason,
+                  decline_reason: declineReason,
+                }
+              : leave
           )
-        );
-      }
+        )
+      );
+      setActingOfficerLeaves((prev) =>
+        sortBySubmissionFifo(
+          prev.map((leave) =>
+            String(leave.id) === String(id)
+              ? {
+                  ...leave,
+                  status: data.status || (action === "confirm" ? "Pending" : "Declined"),
+                  actingOfficerConfirmed: action === "confirm",
+                  acting_officer_confirmed: action === "confirm",
+                  declinedBy,
+                  declined_by: declinedBy,
+                  declineReason,
+                  decline_reason: declineReason,
+                }
+              : leave
+          )
+        )
+      );
       return data;
     },
-    [fetchLeaves, fetchActingOfficerLeaves]
+    []
   );
 
   const updateLeaveStatus = useCallback(
@@ -383,7 +443,7 @@ export function LeaveProvider({ children }) {
       }
 
       setLeaves((prev) =>
-        sortByAppliedDateDesc(
+        sortBySubmissionFifo(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -399,7 +459,9 @@ export function LeaveProvider({ children }) {
           )
         )
       );
-      await fetchLeaves();
+      void fetchLeaves().catch((error) =>
+        console.warn("Failed to refresh leaves after Admin action:", error)
+      );
       return data;
     },
     [fetchLeaves]
@@ -432,7 +494,7 @@ export function LeaveProvider({ children }) {
 
       const data = await res.json();
       setLeaves((prev) =>
-        sortByAppliedDateDesc(
+        sortBySubmissionFifo(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -455,7 +517,9 @@ export function LeaveProvider({ children }) {
           )
         )
       );
-      await fetchLeaves();
+      void fetchLeaves().catch((error) =>
+        console.warn("Failed to refresh leaves after HOD action:", error)
+      );
       return data;
     },
     [fetchLeaves]
@@ -486,7 +550,7 @@ export function LeaveProvider({ children }) {
       }
 
       setLeaves((prev) =>
-        sortByAppliedDateDesc(
+        sortBySubmissionFifo(
           prev.map((leave) =>
             String(leave.id) === String(id)
               ? {
@@ -494,16 +558,15 @@ export function LeaveProvider({ children }) {
                   status:
                     data.status ||
                     (action === "approve" ? "Approved" : "Declined"),
-                  approvedBy:
-                    data.approvedBy ||
-                    (action === "approve" ? "Secretary" : null),
-                  approverRole:
-                    data.approverRole ||
-                    (action === "approve" ? "secretary" : null),
+                  secretaryName: data.secretaryName || null,
+                  secretarySignature: data.secretarySignature || null,
+                  secretaryDecidedAt:
+                    data.secretaryDecidedAt || new Date().toISOString(),
+                  secretaryDecidedById: data.secretaryDecidedById || null,
                   ...(action === "decline"
                     ? {
                         declinedBy: "Secretary",
-                        declineReason: reason || null,
+                        declineReason: reason?.trim() || null,
                       }
                     : { declinedBy: null, declineReason: null }),
                 }
@@ -512,16 +575,15 @@ export function LeaveProvider({ children }) {
         )
       );
 
-      await fetchLeaves();
       return data;
     },
-    [fetchLeaves]
+    []
   );
 
   const updateLeave = useCallback(
     async (id, updates) => {
       setLeaves((prev) =>
-        sortByAppliedDateDesc(
+        sortBySubmissionFifo(
           prev.map((l) => (l.id === id ? { ...l, ...updates } : l))
         )
       );
@@ -583,7 +645,7 @@ export function LeaveProvider({ children }) {
         return { success: false, message: data.message || "Failed to cancel leave" };
 
       setLeaves((prev) =>
-        sortByAppliedDateDesc(
+        sortBySubmissionFifo(
           prev.map((l) =>
             l.id === id
               ? {
@@ -624,7 +686,11 @@ export function LeaveProvider({ children }) {
       if (!officerName) return [];
       const normalize = (s) => (s || "").toString().trim().toLowerCase();
       const target = normalize(officerName);
-      return leaves.filter((l) => {
+      const mergedById = new Map(
+        actingOfficerLeaves.map((leave) => [String(leave.id), leave])
+      );
+      leaves.forEach((leave) => mergedById.set(String(leave.id), leave));
+      return sortBySubmissionFifo([...mergedById.values()].filter((l) => {
         const assignedId = l.actingOfficerUserId ?? l.acting_officer_user_id;
         const assignedRole = l.actingOfficerRole ?? l.acting_officer_role;
         if (assignedId != null && assignedRole) {
@@ -635,9 +701,9 @@ export function LeaveProvider({ children }) {
         const assigned = normalize(l.actingOfficer || l.acting_officer);
         const sameDivision = officerRole === "secretary" || !officerDivision || normalize(l.division) === normalize(officerDivision);
         return assigned === target && sameDivision;
-      });
+      }));
     },
-    [leaves]
+    [leaves, actingOfficerLeaves]
   );
 
   const getLeaveById = useCallback(

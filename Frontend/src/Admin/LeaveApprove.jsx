@@ -30,12 +30,10 @@ function LeaveApprove() {
   const askDecline = (item) => setConfirmModal({ open: true, leave: item, action: "decline" });
   const closeModal = () => setConfirmModal({ open: false, leave: null, action: "approve" });
 
-  // ⭐ Admin approval now FINALIZES the leave (parallel with HOD).
+  // Admin approval is a pre-approval; the HOD makes the final decision.
   const handleApprove = async (item) => {
-    await updateLeaveStatus(item.id, "Approved", {
+    await updateLeaveStatus(item.id, "Admin Approved", {
       recommendedByAdmin: true,
-      approvedBy: currentUser?.name || "Admin",
-      approverRole: "admin",
     });
 
   };
@@ -175,7 +173,7 @@ function LeaveApprove() {
                 onClick={() => askApprove(item)} 
                 className="px-2.5 py-1.5 bg-green-500 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors shadow-sm"
               >
-                Approve
+                Pre-approve
               </button>
               <button 
                 onClick={() => askDecline(item)} 
@@ -221,7 +219,7 @@ function LeaveApprove() {
           {item.status === "Pending" && (
             <>
               <button onClick={() => askApprove(item)} className="px-2.5 py-1.5 bg-green-500 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">
-                Approve
+                Pre-approve
               </button>
               <button onClick={() => askDecline(item)} className="px-2.5 py-1.5 bg-red-500 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">
                 Decline
@@ -285,14 +283,14 @@ function LeaveApprove() {
         tone={confirmModal.action === "approve" ? "approve" : "decline"}
         requireReason={confirmModal.action === "decline"}
         title={confirmModal.action === "approve"
-          ? "Approve this leave request?"
+          ? "Pre-approve this leave request?"
           : "Decline this leave request?"}
         message={confirmModal.leave
           ? confirmModal.action === "approve"
-            ? `You are about to APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). This will finalize the leave.`
+              ? `You are about to PRE-APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). It will be sent to the HOD for the final decision.`
             : `You are about to DECLINE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
           : ""}
-        confirmLabel={confirmModal.action === "approve" ? "Yes, Approve" : "Yes, Decline"}
+        confirmLabel={confirmModal.action === "approve" ? "Yes, Pre-approve" : "Yes, Decline"}
         cancelLabel="Cancel"
         reasonLabel="Reason for declining (optional)"
         reasonPlaceholder="Explain why you are declining this leave..."

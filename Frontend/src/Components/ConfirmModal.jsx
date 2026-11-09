@@ -85,7 +85,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={() => onConfirm(requireReason ? reason.trim() : undefined)}
-            disabled={loading}
+            disabled={loading || (isDecline && requireReason && !reason.trim())}
             className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 ${confirmBtnClass}`}
           >
             {loading ? "Processing..." : confirmLabel}

@@ -11,12 +11,13 @@ import ConfirmModal from "../Components/ConfirmModal.jsx";
 import LeaveApprovalModal from "../hooks/LeaveApprovalModal.jsx";
 import ApplyLeave from "../User/ApplyLeave.jsx";
 import Myleaves from "../User/myleaves.jsx";
-import ActingApprovals from "../User/ActingApprovals.jsx";
-import ActingQuickAccess from "../User/ActingQuickAccess.jsx";
 
 function SecretaryDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") || "dashboard";
+  const requestedTab = searchParams.get("tab");
+  const activeTab = requestedTab === "acting-approvals"
+    ? "pending"
+    : requestedTab || "dashboard";
 
   const setActiveTab = (tab) => {
     if (tab === "dashboard") setSearchParams({}, { replace: false });
@@ -44,38 +45,33 @@ function SecretaryDashboard() {
   const rawLeaves = leaves || [];
   const myId = Number(currentUser?.id || 0);
 
-  // 1. Pending Approvals awaiting Secretary (EO, HOD, and designated leaves)
-  const eoPendingLeaves = rawLeaves.filter((l) => {
-    if (l.status !== "Pending") return false;
-    const role = l.applicantRole ?? l.applicant_role;
-    const applicantId = Number(l.applicantUserId ?? l.applicant_user_id);
-
-    // Secretary cannot approve own leave
-    if (role === "secretary" && applicantId === myId) return false;
-
-    const targetRole = l.targetApproverRole ?? l.target_approver_role;
-    const targetId = Number(l.targetApproverId ?? l.target_approver_id);
-
-    // EO leaves go to Secretary
-    if (role === "executive_officer") return true;
-
-    // Targeted specifically to Secretary role or Secretary user ID
-    if (targetRole === "secretary") return true;
-    if (targetId && targetId === myId) return true;
-
-    // HOD leaves without specific HOD target also escalate to Secretary
-    if (role === "hod" && !targetId) return true;
-
-    return false;
-  });
-
-  // 2. Decision History (Previously Approved/Declined leaves processed by Secretary or EO)
-  const eoHistoryLeaves = rawLeaves.filter(
-    (l) =>
-      ((l.applicantRole ?? l.applicant_role) === "executive_officer" ||
-       (l.approverRole ?? l.approver_role) === "secretary") &&
-      l.status !== "Pending"
+  const secretaryEmail = String(currentUser?.email || "").trim().toLowerCase();
+  const isAssignedSecretary = (leave) => {
+    const role = leave.applicantRole ?? leave.applicant_role;
+    const targetRole = leave.targetApproverRole ?? leave.target_approver_role;
+    const targetId = leave.targetApproverId ?? leave.target_approver_id;
+    const targetEmail = String(leave.targetApproverEmail ?? leave.target_approver_email ?? "").trim().toLowerCase();
+    return role === "hod" &&
+      targetRole === "secretary" &&
+      (targetId != null
+        ? Number(targetId) === myId
+        : Boolean(secretaryEmail && targetEmail === secretaryEmail));
+  };
+  const pendingSecretaryLeaves = rawLeaves.filter(
+    (leave) => leave.status === "Pending" && isAssignedSecretary(leave)
   );
+
+  const secretaryHistoryLeaves = rawLeaves.filter((leave) => {
+    if (!isAssignedSecretary(leave) || leave.status === "Pending") return false;
+    const decidedById = leave.secretaryDecidedById ?? leave.secretary_decided_by_id;
+    const approvedById = leave.approvedById ?? leave.approved_by_id;
+    const decidedByName = leave.declinedBy ?? leave.declined_by;
+    const processedByCurrentSecretary =
+      Number(decidedById) === myId ||
+      Number(approvedById) === myId ||
+      (!decidedById && !approvedById && decidedByName === currentUser?.name);
+    return processedByCurrentSecretary;
+  });
 
   // 3. All leaves for overview
   const allLeaves = rawLeaves;
@@ -132,8 +128,8 @@ function SecretaryDashboard() {
       color: "bg-blue-500",
     },
     {
-      label: "EO Pending Approvals",
-      value: eoPendingLeaves.length,
+      label: "Pending Your Approval",
+      value: pendingSecretaryLeaves.length,
       icon: <Clock className="w-6 h-6 lg:w-8 lg:h-8 text-white" />,
       color: "bg-yellow-500",
     },
@@ -237,22 +233,20 @@ function SecretaryDashboard() {
         return getStatusBadge(item.status);
       },
     },
+
+  ];
+
+  const historyColumns = [
+    ...baseColumns,
     {
-      key: "formAction",
-      label: "Form",
-      className: "text-right",
-      render: (item) => (
-        <button
-          onClick={() => {
-            setSelectedLeave(item);
-            setShowPrintModal(true);
-          }}
-          className="px-2.5 py-1 bg-purple-500 text-white text-xs lg:text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
-          title="View Application Form"
-        >
-          View
-        </button>
-      ),
+      key: "secretaryDecidedAt",
+      label: "Decision Date",
+      render: (item) => {
+        const value = item.secretaryDecidedAt || item.secretary_decided_at;
+        if (!value) return "—";
+        const date = new Date(String(value).replace(" ", "T"));
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+      },
     },
   ];
 
@@ -328,6 +322,12 @@ function SecretaryDashboard() {
             {item.noOfDays || item.days} day(s)
           </span>
         </div>
+
+        {(item.secretaryDecidedAt || item.secretary_decided_at) && (
+          <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+            Decision date: {new Date(String(item.secretaryDecidedAt || item.secretary_decided_at).replace(" ", "T")).toLocaleString()}
+          </p>
+        )}
 
         {/* ✅ Mobile Decline Reason Display */}
         {item.status === "Declined" && reason && (
@@ -433,8 +433,6 @@ function SecretaryDashboard() {
                 ))}
               </div>
 
-              <ActingQuickAccess onReview={() => setActiveTab("acting-approvals")} />
-
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div className="p-4 lg:p-6 border-b border-gray-100 dark:border-gray-700">
                   <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
@@ -479,91 +477,85 @@ function SecretaryDashboard() {
           {activeTab === "pending" && (
             <div className="space-y-6">
               {/* ───────────────────────────────────────────── */}
-              {/* TABLE 1: PENDING EO REQUESTS */}
+              {/* Pending requests assigned to this Secretary by HOD Approval Settings */}
               {/* ───────────────────────────────────────────── */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
                   <div>
                     <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
-                      Executive Officer Pending Approvals
+                      Pending Your Approval
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Approve or decline pending Executive Officer leave requests
+                      HOD leave requests assigned to you as the authorized approver
                     </p>
                   </div>
-                  {eoPendingLeaves.length > 0 && (
+                  {pendingSecretaryLeaves.length > 0 && (
                     <span className="bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 text-xs font-semibold px-3 py-1 rounded-full">
-                      {eoPendingLeaves.length} pending
+                      {pendingSecretaryLeaves.length} pending
                     </span>
                   )}
                 </div>
 
-                {eoPendingLeaves.length === 0 ? (
+                {pendingSecretaryLeaves.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                     <p className="text-sm font-medium">
-                      No pending EO leave applications.
+                      No pending leave applications assigned to you.
                     </p>
                     <p className="text-xs mt-1">
-                      Executive Officer leave requests awaiting your approval will appear here.
+                      HOD requests assigned to you in Approval Settings will appear here.
                     </p>
                   </div>
                 ) : (
                   <DataTable
                     columns={pendingColumns}
-                    data={eoPendingLeaves}
+                    data={pendingSecretaryLeaves}
                     mobileRender={pendingMobileRender}
                     options={{
                       searchable: true,
                       showFilters: false,
                       itemsPerPage: 15,
                     }}
-                    label="EO pending leave requests"
+                    label="pending HOD leave requests"
                   />
                 )}
               </div>
 
               {/* ───────────────────────────────────────────── */}
-              {/* TABLE 2: EO DECISION HISTORY */}
+              {/* Secretary decision history */}
               {/* ───────────────────────────────────────────── */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
                 <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
                   <div>
                     <h3 className="text-base lg:text-lg font-semibold text-gray-800 dark:text-white">
-                      EO Decision History
+                      Approved and Declined HOD Requests
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Previously approved or declined Executive Officer requests
+                      HOD leave requests you have already processed
                     </p>
                   </div>
                 </div>
 
-                {eoHistoryLeaves.length === 0 ? (
+                {secretaryHistoryLeaves.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                     <p className="text-sm font-medium">No history found.</p>
                     <p className="text-xs mt-1">
-                      Approved or declined EO requests will appear here.
+                      Approved and declined HOD requests will remain available here.
                     </p>
                   </div>
                 ) : (
                   <DataTable
-                    columns={baseColumns}
-                    data={eoHistoryLeaves}
+                    columns={historyColumns}
+                    data={secretaryHistoryLeaves}
                     mobileRender={baseMobileRender}
                     options={{
                       searchable: true,
                       showFilters: true,
                       itemsPerPage: 15,
                     }}
-                    label="EO decision history"
+                    label="Secretary decision history"
                   />
                 )}
               </div>
-            </div>
-          )}
-
-          {activeTab === "acting-approvals" && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 lg:p-6">
-              <ActingApprovals />
             </div>
           )}
 
@@ -616,7 +608,7 @@ function SecretaryDashboard() {
           confirmModal.action === "approve" ? "Yes, Approve" : "Yes, Decline"
         }
         cancelLabel="Cancel"
-        reasonLabel="Reason for declining (optional)"
+        reasonLabel="Reason for declining (required)"
         reasonPlaceholder="Explain why you are declining this leave..."
       />
 

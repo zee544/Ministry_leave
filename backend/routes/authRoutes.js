@@ -940,6 +940,7 @@ router.put('/profile', verifyToken, async (req, res) => {
     let tableName;
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
+    else if (role === 'secretary') tableName = 'secretary';
     else tableName = 'employees';
 
     const [currentProfileRows] = await pool.query(
@@ -1094,6 +1095,7 @@ router.get('/signature', verifyToken, async (req, res) => {
     let tableName;
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
+    else if (role === 'secretary') tableName = 'secretary';
     else tableName = 'employees';
 
     const [rows] = await pool.query(
@@ -1128,6 +1130,7 @@ router.put('/signature', verifyToken, async (req, res) => {
     let tableName;
     if (role === 'admin') tableName = 'admins';
     else if (role === 'hod') tableName = 'hod';
+    else if (role === 'secretary') tableName = 'secretary';
     else tableName = 'employees';
 
     await pool.query(

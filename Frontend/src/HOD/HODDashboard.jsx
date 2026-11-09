@@ -86,6 +86,14 @@ function HODDashboard() {
 
     const applicantId = Number(l.applicantUserId ?? l.applicant_user_id);
     const role = l.applicantRole ?? l.applicant_role;
+    const adminApprovalRequired = Boolean(
+      l.adminApprovalRequired ?? l.admin_approval_required
+    );
+
+    if (role === "employee") {
+      if (adminApprovalRequired && l.status !== "Admin Approved") return false;
+      if (!adminApprovalRequired && l.status !== "Pending") return false;
+    }
 
     // An HOD cannot approve their own leave
     if (applicantId === myId && role === "hod") return false;
@@ -653,7 +661,7 @@ function HODDashboard() {
                       </button>
                     </div>
                     <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-                      These leaves are awaiting your action. Whichever of Admin or HOD acts first finalizes the leave.
+                      Employee requests are shown here after Admin pre-approval, or directly when the division has no Admin. HOD provides the final decision.
                     </p>
                   </div>
                   <div className="p-4">
@@ -713,7 +721,7 @@ function HODDashboard() {
                     </span>
                   </div>
                   <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-                    These leaves are awaiting your action. Whichever of Admin or HOD acts first finalizes the leave.
+                    Employee requests are shown here after Admin pre-approval, or directly when the division has no Admin. HOD provides the final decision.
                   </p>
                 </div>
                 <div className="p-4">

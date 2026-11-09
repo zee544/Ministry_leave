@@ -320,6 +320,7 @@ async function setupDatabase() {
       ['employees', 'must_change_password', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['employees', 'signature_image', 'MEDIUMTEXT NULL'],
       ['leaves', 'decline_reason', 'TEXT NULL'],
+      ['leaves', 'admin_approval_required', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['leaves', 'acting_officer_confirmed', 'BOOLEAN NOT NULL DEFAULT FALSE'],
       ['leaves', 'acting_officer_user_id', 'INT NULL'],
       ['leaves', 'acting_officer_role', 'VARCHAR(50) NULL'],
@@ -328,6 +329,9 @@ async function setupDatabase() {
       ['leaves', 'approved_by', 'VARCHAR(100) NULL'],
       ['leaves', 'approver_role', 'VARCHAR(50) NULL'],
       ['leaves', 'approved_by_id', 'INT NULL'],
+      ['leaves', 'secretary_decided_at', 'DATETIME NULL'],
+      ['leaves', 'secretary_decided_by_id', 'INT NULL'],
+      ['leaves', 'secretary_signature', 'MEDIUMTEXT NULL'],
       ['leaves', 'target_approver_id', 'INT NULL'],
       ['leaves', 'target_approver_role', 'VARCHAR(50) NULL'],
       ['leaves', 'target_approver_email', 'VARCHAR(150) NULL'],
@@ -343,6 +347,17 @@ async function setupDatabase() {
         applicantIdentitySchemaAdded ||= wasAdded;
       }
     }
+
+    await conn.query(
+      `UPDATE leaves l
+       SET admin_approval_required = 1
+       WHERE l.applicant_role = 'employee'
+         AND EXISTS (
+           SELECT 1 FROM admins a
+           WHERE LOWER(TRIM(CONVERT(a.division USING utf8mb4))) COLLATE utf8mb4_unicode_ci =
+                 LOWER(TRIM(CONVERT(l.division USING utf8mb4))) COLLATE utf8mb4_unicode_ci
+         )`
+    );
 
     const [notificationIdentityIndexes] = await conn.query(
       `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS

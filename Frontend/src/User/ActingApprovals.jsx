@@ -14,6 +14,7 @@ function ActingApprovals() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const actionInFlight = useRef(false);
+    const [processingLeaveId, setProcessingLeaveId] = useState(null);
 
     const [confirmModal, setConfirmModal] = useState({
         open: false,
@@ -38,7 +39,10 @@ function ActingApprovals() {
     }, [fetchActingOfficerLeaves]);
 
     useEffect(() => {
-        const refreshAssignments = () => fetchActingOfficerLeaves?.();
+        const refreshAssignments = () =>
+            fetchActingOfficerLeaves?.({ force: true }).catch((err) =>
+                console.warn("Failed to refresh Acting Approvals:", err.message)
+            );
         window.addEventListener("leaves:acting-refresh", refreshAssignments);
         return () => window.removeEventListener("leaves:acting-refresh", refreshAssignments);
     }, [fetchActingOfficerLeaves]);
@@ -58,31 +62,17 @@ function ActingApprovals() {
         (l) => l.status !== "Pending Acting Officer"
     );
 
-    const renderActingDecision = (item) => {
-        const declinedBy = item.declinedBy || item.declined_by || "";
-        const reason = item.declineReason || item.decline_reason;
-        const confirmed = item.actingOfficerConfirmed || item.acting_officer_confirmed;
-        if (String(declinedBy).toLowerCase() === "acting officer") {
-            return `Declined by Acting Officer${reason ? `: ${reason}` : ""}`;
-        }
-        if (confirmed || (item.status === "Pending" && item.actingOfficer)) {
-            return "Approved by Acting Officer; forwarded to the next configured approver.";
-        }
-        return "Awaiting Acting Officer decision.";
-    };
-
     const askConfirm = (leave) => setConfirmModal({ open: true, leave, action: "confirm" });
     const askDecline = (leave) => setConfirmModal({ open: true, leave, action: "decline" });
     const closeModal = () => setConfirmModal({ open: false, leave: null, action: "confirm" });
 
     const handleConfirm = async (leave) => {
-        setLoading(true);
         setError(null);
 
         try {
             await confirmActingOfficer(leave.id, "confirm");
 
-      setToast(`Approved ${leave.employee}'s leave. Forwarded to the configured approver.`);
+            setToast(`Approved ${leave.employee}'s leave. Forwarded to the configured approver.`);
             setTimeout(() => setToast(""), 3500);
 
         } catch (error) {
@@ -90,13 +80,10 @@ function ActingApprovals() {
             setError(error.message);
             setToast(`❌ Failed to confirm ${leave.employee}'s leave: ${error.message}`);
             setTimeout(() => setToast(""), 5000);
-        } finally {
-            setLoading(false);
         }
     };
 
     const handleDecline = async (leave, reason) => {
-        setLoading(true);
         setError(null);
 
         try {
@@ -110,8 +97,6 @@ function ActingApprovals() {
             setError(error.message);
             setToast(`❌ Failed to decline ${leave.employee}'s leave: ${error.message}`);
             setTimeout(() => setToast(""), 5000);
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -120,6 +105,7 @@ function ActingApprovals() {
         if (!leave || actionInFlight.current) return;
 
         actionInFlight.current = true;
+        setProcessingLeaveId(leave.id);
         try {
             if (action === "confirm") {
                 await handleConfirm(leave);
@@ -129,6 +115,7 @@ function ActingApprovals() {
             closeModal();
         } finally {
             actionInFlight.current = false;
+            setProcessingLeaveId(null);
         }
     };
 
@@ -177,12 +164,23 @@ function ActingApprovals() {
         if (
             item.status === "Declined" &&
             (item.declinedBy === "Acting Officer" ||
-                item.declined_by === "Acting Officer")
+                item.declined_by === "Acting Officer" ||
+                String(item.declinedBy || item.declined_by || "").toLowerCase() === "acting officer")
         ) {
             return (
-                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
-                    ✗ You Declined
-                </span>
+                <div className="flex min-w-0 flex-col items-start gap-0.5">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-700">
+                        ✗ You Declined
+                    </span>
+                    {(item.declineReason || item.decline_reason) && (
+                        <span
+                            className="max-w-full whitespace-normal break-words text-[10px] italic leading-tight text-red-600 dark:text-red-400"
+                            title={item.declineReason || item.decline_reason}
+                        >
+                            Reason: {item.declineReason || item.decline_reason}
+                        </span>
+                    )}
+                </div>
             );
         }
         if (item.status === "Declined") {
@@ -217,51 +215,47 @@ function ActingApprovals() {
         { key: "from", label: "From", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.from}</span> },
         { key: "to", label: "To", render: (item) => <span className="text-gray-800 dark:text-gray-200">{item.to}</span> },
         {
-            key: "noOfDays",
-            label: "Days",
-            render: (item) => (
-                <span className="font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-2 py-0.5 rounded text-xs">
-                    {item.noOfDays || item.days || "—"}
-                </span>
-            ),
-        },
-        {
             key: "status",
             label: "Status",
             className: "min-w-[200px]",
-            render: () => (
-                <span className="whitespace-nowrap inline-block px-3 py-1 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-                    Awaiting Your Confirmation
-                </span>
-            ),
+            render: (item) => item.status === "Pending Acting Officer"
+                ? (
+                    <span className="whitespace-nowrap inline-block px-3 py-1 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                        Awaiting Your Confirmation
+                    </span>
+                )
+                : renderHistoryStatus(item),
         },
         {
-            key: "actions",
-            label: "Action",
-            className: "text-right",
+            key: "daysActions",
+            label: "Days / Actions",
+            className: "min-w-[190px]",
             render: (item) => (
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className="font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-2 py-0.5 rounded text-xs">
+                        {item.noOfDays || item.days || "—"} days
+                    </span>
                     <button
                         onClick={() => {
                             setSelectedLeave(item);
                             setShowPrintModal(true);
                         }}
                         className="px-3 py-1 bg-purple-500 text-white text-md rounded-lg hover:bg-purple-700"
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                     >
                         View
                     </button>
                     <button
                         onClick={() => askConfirm(item)}
                         className="px-3 py-1 bg-green-500 text-white text-md font-medium rounded-lg hover:bg-green-700"
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                     >
                         Approve
                     </button>
                     <button
                         onClick={() => askDecline(item)}
                         className="px-3 py-1 bg-red-500 text-white text-md font-medium rounded-lg hover:bg-red-700"
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                     >
                         Decline
                     </button>
@@ -299,18 +293,14 @@ function ActingApprovals() {
             render: (item) => renderHistoryStatus(item),
         },
         {
-            key: "actingDecision",
-            label: "Acting Officer Decision",
+            key: "daysActions",
+            label: "Days / Actions",
+            className: "min-w-[150px]",
             render: (item) => (
-                <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-normal">
-                    {renderActingDecision(item)}
-                </span>
-            ),
-        },
-        {
-            key: "actions",
-            label: "Action",
-            render: (item) => (
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-2 py-0.5 rounded text-xs">
+                        {item.noOfDays || item.days || "—"} days
+                    </span>
                 <button
                     onClick={() => {
                         setSelectedLeave(item);
@@ -320,6 +310,7 @@ function ActingApprovals() {
                 >
                     View
                 </button>
+                </div>
             ),
         },
     ];
@@ -328,13 +319,10 @@ function ActingApprovals() {
     const PendingMobileCard = ({ item }) => (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-800 p-2 mb-1.5">
             {/* Row 1 */}
-            <div className="flex justify-between items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1">
                 <p className="font-semibold text-[13px] text-gray-800 dark:text-white truncate">
                     {item.employee}
                 </p>
-                <span className="shrink-0 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">
-                    {item.noOfDays || item.days || "—"}d
-                </span>
             </div>
 
             {/* Row 2 */}
@@ -351,37 +339,40 @@ function ActingApprovals() {
                 <span className="font-medium">{item.to}</span>
             </p>
 
-            {/* Row 4: status + buttons on same row */}
-            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-amber-100 dark:border-amber-800">
-                <span className="shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-                    Awaiting Confirmation
+            {/* Status stays separate from Days / Actions. */}
+            <div className="border-t border-amber-100 pt-1.5 dark:border-amber-800">
+                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                    Awaiting Your Confirmation
                 </span>
-                <div className="flex items-center gap-1 shrink-0">
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1">
+                    <span className="mr-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                        {item.noOfDays || item.days || "—"} days
+                    </span>
                     <button
                         onClick={() => {
                             setSelectedLeave(item);
                             setShowPrintModal(true);
                         }}
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                         className="px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded hover:bg-purple-700 disabled:opacity-60"
                     >
                         View
                     </button>
                     <button
                         onClick={() => askConfirm(item)}
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                         className="px-2 py-1 bg-green-500 text-white text-[10px] font-medium rounded hover:bg-green-700 disabled:opacity-60"
                     >
                         Approve
                     </button>
                     <button
                         onClick={() => askDecline(item)}
-                        disabled={loading}
+                        disabled={loading || String(processingLeaveId) === String(item.id)}
                         className="px-2 py-1 bg-red-500 text-white text-[10px] font-medium rounded hover:bg-red-700 disabled:opacity-60"
                     >
                         Decline
                     </button>
-                </div>
             </div>
         </div>
     );
@@ -389,13 +380,10 @@ function ActingApprovals() {
     const HistoryMobileCard = ({ item }) => (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2 mb-1.5">
             {/* Row 1 */}
-            <div className="flex justify-between items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1">
                 <p className="font-semibold text-[13px] text-gray-800 dark:text-white truncate">
                     {item.employee || "—"}
                 </p>
-                <span className="shrink-0 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">
-                    {item.noOfDays || item.days || "—"}d
-                </span>
             </div>
 
             {/* Row 2 */}
@@ -412,9 +400,13 @@ function ActingApprovals() {
                 <span className="font-medium">{item.to || "—"}</span>
             </p>
 
-            {/* Row 4: status + View on same row */}
-            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-100 dark:border-gray-700">
+            <div className="border-t border-gray-100 pt-1.5 dark:border-gray-700">
                 <div className="min-w-0">{renderHistoryStatus(item)}</div>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1">
+                <span className="mr-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                    {item.noOfDays || item.days || "—"} days
+                </span>
                 <button
                     onClick={() => {
                         setSelectedLeave(item);
@@ -555,7 +547,7 @@ function ActingApprovals() {
                 onConfirm={processAction}
                 tone={confirmModal.action === "confirm" ? "approve" : "decline"}
                 requireReason={confirmModal.action === "decline"}
-                loading={loading}
+                loading={Boolean(processingLeaveId)}
                 title={
                     confirmModal.action === "confirm"
                         ? "Confirm this leave request?"

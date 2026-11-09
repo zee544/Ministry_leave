@@ -19,7 +19,7 @@ function Settings() {
   const [toastType, setToastType] = useState("success");
   const [savingSignature, setSavingSignature] = useState(false);
 
-  const handleSaveSignature = async () => {
+  const handleSaveSignature = async (signature = getSignature(currentUser?.name)) => {
     setSavingSignature(true);
     try {
       const token = localStorage.getItem("token");
@@ -27,8 +27,6 @@ function Settings() {
         showToast("You are not logged in", "error");
         return;
       }
-
-      const signature = getSignature(currentUser.name);
 
       const res = await fetch(apiUrl("/api/auth/signature"), {
         method: "PUT",
@@ -193,11 +191,18 @@ function Settings() {
             </div>
 
             <div className="pt-4 sm:pt-5">
-              <SignatureUpload signatureKey={currentUser.name} label="Signature" />
+              <SignatureUpload
+                signatureKey={currentUser.name}
+                label="Signature"
+                onSignatureChange={
+                  currentUser?.role === "secretary" ? handleSaveSignature : undefined
+                }
+              />
               <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2.5 sm:mt-3 flex items-start gap-2">
                 <span>
-                  This signature will be automatically applied to all printed
-                  leave forms you submit.
+                  {currentUser?.role === "secretary"
+                    ? "This signature will be applied to leave forms when you approve requests."
+                    : "This signature will be automatically applied to leave forms you submit."}
                 </span>
               </p>
             </div>

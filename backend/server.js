@@ -10,6 +10,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const { router: notificationsStreamRouter } = require('./routes/notificationsStream');
 const pool = require('./config/db');
+const { ensureSecretaryDecisionColumns } = require('./utils/schemaMigrations');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -47,12 +48,26 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ message: `API route ${req.originalUrl} not found.` });
 });
 
-const server = app.listen(PORT, HOST, () => {
-  console.log(`[Server] Ministry Leave System Backend running at http://${HOST}:${PORT}`);
-  console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+async function startServer() {
+  try {
+    await ensureSecretaryDecisionColumns(pool);
+  } catch (error) {
+    console.error(
+      `[DB Migration] Failed to prepare leave decision columns (${error.code || 'UNKNOWN'}).`
+    );
+    process.exitCode = 1;
+    return;
+  }
 
-server.on('error', (error) => {
-  console.error(`[Server] Failed to listen on ${HOST}:${PORT} (${error.code || 'UNKNOWN'}).`);
-  process.exitCode = 1;
-});
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[Server] Ministry Leave System Backend running at http://${HOST}:${PORT}`);
+    console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+
+  server.on('error', (error) => {
+    console.error(`[Server] Failed to listen on ${HOST}:${PORT} (${error.code || 'UNKNOWN'}).`);
+    process.exitCode = 1;
+  });
+}
+
+startServer();

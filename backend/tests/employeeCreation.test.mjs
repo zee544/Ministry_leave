@@ -46,6 +46,52 @@ function post(path, body, token) {
   });
 }
 
+function put(path, body, token) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const request = http.request(`${baseUrl}${path}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        ...(token ? { Authorization: token } : {}),
+      },
+    }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(responseBody) }));
+    });
+    request.on('error', reject);
+    request.end(payload);
+  });
+}
+
+function patch(path, body, token) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const request = http.request(`${baseUrl}${path}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        ...(token ? { Authorization: token } : {}),
+      },
+    }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(responseBody) }));
+    });
+    request.on('error', reject);
+    request.end(payload);
+  });
+}
+
 function tokenFor(role) {
   return jwt.sign(
     { id: 5, name: 'Test Admin', role, division: 'Accounts' },
@@ -141,7 +187,7 @@ describe('employee creation endpoint', () => {
     expect(insertValues[5]).toBe('2026-10-12');
   });
 
-  it('lets HODs create employees only in their assigned division with a temporary password', async () => {
+  it('lets HODs create employees in their assigned division with optional details and the default password', async () => {
     const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
       if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
       if (sql.includes('SELECT id FROM')) return [[], []];
@@ -151,9 +197,7 @@ describe('employee creation endpoint', () => {
 
     const response = await post('/api/admin/hod/employees', {
       name: 'HOD Employee',
-      designation: 'Officer',
       email: 'hod.employee@example.test',
-      appointment_date: '2026-10-12',
       division: 'A different division',
     }, tokenFor('hod'));
 
@@ -162,9 +206,11 @@ describe('employee creation endpoint', () => {
       id: 326,
       division: 'Accounts',
       email: 'hod.employee@example.test',
+      designation: null,
+      appointment_date: null,
       status: 'Active',
     });
-    expect(response.body.temporaryPassword).toHaveLength(16);
+    expect(response.body.temporaryPassword).toBe('Ministry@123');
 
     const [insertSql, insertValues] = query.mock.calls.find(
       ([sql]) => sql.includes('INSERT INTO employees')
@@ -172,13 +218,109 @@ describe('employee creation endpoint', () => {
     expect(insertSql).toContain('must_change_password');
     expect(insertValues.slice(0, 4)).toEqual([
       'HOD Employee',
-      'Officer',
+      null,
       'Accounts',
       'hod.employee@example.test',
     ]);
-    expect(insertValues[5]).toBe('2026-10-12');
+    expect(insertValues[5]).toBeNull();
     expect(insertSql).toContain("'Active', 1");
-    await expect(bcrypt.compare(response.body.temporaryPassword, insertValues[4])).resolves.toBe(true);
+    await expect(bcrypt.compare('Ministry@123', insertValues[4])).resolves.toBe(true);
+  });
+
+  it('allows HODs to set a custom initial password', async () => {
+    vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
+      if (sql.includes('SELECT id FROM')) return [[], []];
+      if (sql.includes('INSERT INTO employees')) return [{ insertId: 327 }, []];
+      return [[], []];
+    });
+
+    const response = await post('/api/admin/hod/employees', {
+      name: 'Custom Password Employee',
+      email: 'custom.employee@example.test',
+      password: 'MyCustomPass123',
+    }, tokenFor('hod'));
+
+    expect(response.status).toBe(201);
+    expect(response.body.temporaryPassword).toBe('MyCustomPass123');
+  });
+
+  it('allows HODs to edit employees only in their own division', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
+      if (sql.includes('SELECT id FROM employees') && sql.includes('WHERE id = ? AND LOWER(TRIM(division))')) {
+        return [[{ id: 410 }], []];
+      }
+      if (sql.includes('UPDATE employees')) return [{ affectedRows: 1 }, []];
+      return [[], []];
+    });
+
+    const response = await put('/api/admin/hod/employees/410', {
+      name: 'Updated Employee',
+      designation: '',
+      division: 'Accounts',
+      email: 'updated.employee@example.test',
+      appointment_date: '',
+      status: 'On Leave',
+    }, tokenFor('hod'));
+
+    expect(response.status).toBe(200);
+    expect(response.body.employee).toMatchObject({
+      id: 410,
+      name: 'Updated Employee',
+      designation: null,
+      division: 'Accounts',
+      email: 'updated.employee@example.test',
+      appointment_date: null,
+      status: 'On Leave',
+    });
+    const [updateSql, updateValues] = query.mock.calls.find(([sql]) => sql.includes('UPDATE employees'));
+    expect(updateSql).toContain('WHERE id = ? AND LOWER(TRIM(division)) = LOWER(TRIM(?))');
+    expect(updateValues).toEqual([
+      'Updated Employee',
+      null,
+      'Accounts',
+      'updated.employee@example.test',
+      null,
+      'On Leave',
+      '410',
+      'Accounts',
+    ]);
+  });
+
+  it('prevents HODs from assigning employees to another division', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
+      return [[], []];
+    });
+    const response = await put('/api/admin/hod/employees/410', {
+      name: 'Updated Employee',
+      designation: '',
+      division: 'Administration',
+      email: 'updated.employee@example.test',
+      appointment_date: '',
+      status: 'Active',
+    }, tokenFor('hod'));
+
+    expect(response.status).toBe(403);
+    expect(query.mock.calls.some(([sql]) => sql.includes('UPDATE employees'))).toBe(false);
+  });
+
+  it('lets HODs activate and deactivate employees in their own division', async () => {
+    const query = vi.spyOn(pool, 'query').mockImplementation(async (sql) => {
+      if (sql.includes('SELECT division FROM hod')) return [[{ division: 'Accounts' }], []];
+      if (sql.includes('SELECT status FROM employees')) return [[{ status: 'Active' }], []];
+      if (sql.includes('UPDATE employees')) return [{ affectedRows: 1 }, []];
+      return [[], []];
+    });
+
+    const response = await patch('/api/admin/hod/employees/410/status', {}, tokenFor('hod'));
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('Inactive');
+    const [updateSql, updateValues] = query.mock.calls.find(([sql]) => sql.includes('UPDATE employees'));
+    expect(updateSql).toContain('WHERE id = ? AND LOWER(TRIM(division)) = LOWER(TRIM(?))');
+    expect(updateValues).toEqual(['Inactive', '410', 'Accounts']);
   });
 
   it('does not allow employees to use the HOD employee creation endpoint', async () => {

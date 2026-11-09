@@ -32,6 +32,7 @@ function CreateEmployee({
     generateTemporaryPassword = false,
     requireDesignation = false,
     requireAppointmentDate = false,
+    onSuccessDismiss,
 }) {
     const { addEmployee, currentUser } = useUser();
     const [formdata, setformdata] = useState({
@@ -47,6 +48,8 @@ function CreateEmployee({
     const [showSuccess, setShowSuccess] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [createdTemporaryPassword, setCreatedTemporaryPassword] = useState('');
+    const [passwordCopied, setPasswordCopied] = useState(false);
+    const [copyError, setCopyError] = useState('');
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -94,6 +97,8 @@ const validateForm = () => {
 const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError('');
+    setCopyError('');
+    setPasswordCopied(false);
     setCreatedTemporaryPassword('');
 
     if (!validateForm()) return;
@@ -197,15 +202,36 @@ const handleSubmit = async (e) => {
                                 : "New employee has been added to the system successfully."}
                         </p>
                         {createdTemporaryPassword && (
-                            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-                                Share this temporary password securely:{" "}
-                                <strong className="select-all">{createdTemporaryPassword}</strong>
-                            </p>
+                            <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+                                <p>
+                                    Share this temporary password securely:{" "}
+                                    <strong className="select-all">{createdTemporaryPassword}</strong>
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            await navigator.clipboard.writeText(createdTemporaryPassword);
+                                            setPasswordCopied(true);
+                                            setCopyError('');
+                                        } catch (error) {
+                                            setCopyError(`Could not copy password: ${error.message}`);
+                                        }
+                                    }}
+                                    className="mt-2 rounded-md border border-amber-700 px-3 py-1 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                                >
+                                    {passwordCopied ? "Copied" : "Copy password"}
+                                </button>
+                                {copyError && <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">{copyError}</p>}
+                            </div>
                         )}
 
                         <button
                             type="button"
-                            onClick={() => setShowSuccess(false)}
+                            onClick={() => {
+                                setShowSuccess(false);
+                                onSuccessDismiss?.();
+                            }}
                             className="mt-6 w-full rounded-lg px-4 py-2.5 text-sm font-semibold
                                        text-white bg-blue-600 hover:bg-blue-700
                                        dark:bg-blue-600 dark:hover:bg-blue-500

@@ -20,7 +20,7 @@ function actingOfficerApprovalsPath(role) {
     employee: '/userdashboard?tab=actingapprovals',
     hod: '/hoddashboard?tab=acting-approvals',
     admin: '/Admindashboard?tab=acting-approvals',
-    secretary: '/secretarydashboard?tab=acting-approvals',
+    secretary: '/secretarydashboard?tab=pending',
     executive_officer: '/executiveofficerdashboard?tab=acting-approvals',
   };
   return paths[role] || paths.employee;
@@ -107,58 +107,15 @@ async function sendHodAwaitingFinalApprovalEmail(leave) {
   });
 }
 
-/**
- * Send the same "leave details" email to Admin AND HOD in parallel.
- * Returns { adminSent, hodSent } — never throws unless both fail.
- */
-async function sendToAdminAndHod({ leave, subject, text, mailHtml, accentAdmin, accentHod }) {
+async function sendToDivisionAdmin({ leave, subject, text, mailHtml, accentAdmin }) {
   const adminEmail = await findDivisionAdminEmail(leave.division);
-  const hodEmail = await findDivisionHodEmail(leave.division);
-
-  if (!adminEmail && !hodEmail) {
-    throw new Error('Neither Admin nor HOD email could be resolved for division: ' + leave.division);
-  }
-
-  const results = { adminSent: false, hodSent: false };
-  const errors = [];
-
-  if (adminEmail) {
-    try {
-      await sendEmail({
-        to: adminEmail,
-        subject,
-        text,
-        html: wrapTemplate({ title: subject, accentColor: accentAdmin || '#2563eb', bodyHtml: mailHtml }),
-      });
-      results.adminSent = true;
-    } catch (err) {
-      errors.push({ target: 'admin', error: err });
-    }
-  }
-
-  if (hodEmail) {
-    try {
-      await sendEmail({
-        to: hodEmail,
-        subject,
-        text,
-        html: wrapTemplate({ title: subject, accentColor: accentHod || '#7c3aed', bodyHtml: mailHtml }),
-      });
-      results.hodSent = true;
-    } catch (err) {
-      errors.push({ target: 'hod', error: err });
-    }
-  }
-
-  // Only throw if BOTH failed (partial success is acceptable)
-  if (!results.adminSent && !results.hodSent && errors.length > 0) {
-    throw Object.assign(
-      new Error('Failed to send leave notification to both Admin and HOD.'),
-      { code: errors[0].error?.code }
-    );
-  }
-
-  return results;
+  if (!adminEmail) throw new Error('Admin email address was not found for the division.');
+  await sendEmail({
+    to: adminEmail,
+    subject,
+    text,
+    html: wrapTemplate({ title: subject, accentColor: accentAdmin || '#2563eb', bodyHtml: mailHtml }),
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -204,7 +161,7 @@ async function sendActingOfficerAssignedEmail(leave, actingOfficerName, actingUs
 }
 
 // ═══════════════════════════════════════════════
-// STAGE 1b — Employee submits leave WITHOUT acting officer → notify BOTH Admin & HOD (parallel)
+// STAGE 1b — Employee submits leave without an acting officer → notify Admin.
 // ═══════════════════════════════════════════════
 async function sendAdminNewLeaveEmail(leave) {
   const { employee, division, type, from, to, noOfDays, reason, address } = leave;
@@ -212,7 +169,7 @@ async function sendAdminNewLeaveEmail(leave) {
   const mailHtml = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; font-size: 14px; line-height: 1.5;">
       <p style="margin-bottom: 10px;">Hello,</p>
-      <p style="color: #475569; margin-bottom: 16px;">A new leave application has been submitted. You can approve or decline it directly — no acting officer was assigned.</p>
+      <p style="color: #475569; margin-bottom: 16px;">A new leave application has been submitted and is awaiting Admin pre-approval. After Admin approval, the HOD makes the final decision.</p>
 
       <table style="width:100%; border-collapse:separate; border-spacing:0; margin:12px 0; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 13px;">
         <tr><td style="padding:9px 12px; background:#f8fafc; border-bottom: 1px solid #e2e8f0; width: 35%;"><strong>Employee</strong></td><td style="padding:9px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${employee}</td></tr>
@@ -225,18 +182,17 @@ async function sendAdminNewLeaveEmail(leave) {
         ${address ? `<tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Address on Leave</strong></td><td style="padding:9px 12px; color: #1e293b;">${address}</td></tr>` : ''}
       </table>
 
-      <p style="color: #475569; margin-top: 16px;">Please log in to the Ministry Leave System to review this request. <strong>Whichever of you (Admin or HOD) acts first will finalize the leave.</strong></p>
+      <p style="color: #475569; margin-top: 16px;">Please log in to the Ministry Leave System to review this request. The HOD makes the final decision after Admin pre-approval.</p>
       ${emailAction('/Admindashboard?tab=leaves', 'Review Leave Request').html}
     </div>
   `;
 
-  await sendToAdminAndHod({
+  await sendToDivisionAdmin({
     leave,
     subject: `New Leave Application — ${employee} (${division})`,
     text: `${employee} has submitted a ${type} leave from ${from} to ${to}. Sign in to review.`,
     mailHtml,
     accentAdmin: '#2563eb',
-    accentHod: '#7c3aed',
   });
 }
 
@@ -258,7 +214,7 @@ async function sendApprovalRequestEmail({ leave, approverEmail, approverRole }) 
 }
 
 // ═══════════════════════════════════════════════
-// STAGE 2a — Acting Officer CONFIRMED → notify BOTH Admin & HOD (parallel)
+// STAGE 2a — Acting Officer confirms → notify Admin for pre-approval.
 // ═══════════════════════════════════════════════
 async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
   const action = emailAction('/Admindashboard?tab=leaves', 'Review Leave Request');
@@ -276,18 +232,17 @@ async function sendAdminAwaitingApprovalEmail(leave, actingOfficerName) {
         <tr><td style="padding:9px 12px; background:#f8fafc;"><strong>Acting Officer</strong></td><td style="padding:9px 12px; color: #1e293b;">${actingOfficerName}</td></tr>
       </table>
       
-      <p style="color: #475569; margin-top: 16px;">Please log in. <strong>Whichever of you (Admin or HOD) acts first will finalize the leave.</strong></p>
+      <p style="color: #475569; margin-top: 16px;">Please log in to pre-approve or decline this request. If pre-approved, it will be forwarded to the HOD for the final decision.</p>
       ${action.html}
     </div>
   `;
 
-  await sendToAdminAndHod({
+  await sendToDivisionAdmin({
     leave,
     subject: `Leave Awaiting Approval — ${leave.employee}`,
     text: `${leave.employee}'s ${leave.type} leave has been confirmed by Acting Officer ${actingOfficerName} and is awaiting approval. Sign in to review: ${action.url}`,
     mailHtml,
     accentAdmin: '#2563eb',
-    accentHod: '#7c3aed',
   });
 }
 
@@ -356,6 +311,20 @@ async function sendEmployeeDeclinedByAdminEmail(leave, reason) {
         </div>
       `,
     }),
+  });
+}
+
+async function sendSecretaryDecisionEmail(leave, action, reason = null) {
+  const email = await findApplicantEmail(leave);
+  if (!email) throw new Error('Applicant email address was not found.');
+  const decision = action === 'approve' ? 'approved' : 'declined';
+  const reasonLine = action === 'decline' ? ` Reason: ${reason}` : '';
+  const reviewUrl = getFrontendUrl('/hoddashboard?tab=my-leaves');
+
+  await sendEmail({
+    to: email,
+    subject: `Your Leave Request Was ${decision === 'approved' ? 'Approved' : 'Declined'} by the Secretary — ${leave.type}`,
+    text: `Your ${leave.type} leave from ${leave.from} to ${leave.to} was ${decision} by the Secretary.${reasonLine} Review your leave requests: ${reviewUrl}`,
   });
 }
 
@@ -559,6 +528,7 @@ module.exports = {
   sendAdminAwaitingApprovalEmail,
   sendEmployeeDeclinedByActingOfficerEmail,
   sendEmployeeDeclinedByAdminEmail,
+  sendSecretaryDecisionEmail,
   sendFinalApprovalEmails,
   sendEmployeeDeclinedByHodEmail,
   sendActingOfficerCancelledEmail,

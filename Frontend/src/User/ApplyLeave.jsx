@@ -157,8 +157,7 @@ function ApplyLeave() {
             return;
         }
 
-        // ✅ 2. Enforce Acting Officer only for regular employees
-        if (!isSenior && !formData.actingOfficer) {
+        if (!formData.actingOfficer) {
             alert("Please select an Acting Officer.");
             return;
         }
@@ -328,17 +327,17 @@ function ApplyLeave() {
                     {["employee", "admin", "hod", "secretary", "executive_officer"].includes(currentUser.role) && (
                         <div className="col-span-1 sm:col-span-2">
                             <label className={labelClass}>
-                                Acting Officer{isSenior ? "" : " *"}
+                                Acting Officer *
                             </label>
                             <select
                                 name="actingOfficer"
                                 value={formData.actingOfficer}
                                 onChange={handleChange}
                                 className={inputBaseClass}
-                                required={!isSenior}
+                                required
                             >
                                 <option value="">
-                                    {isSenior ? "Select an Acting Officer (Optional)" : "Select an Acting Officer (Required)"}
+                                    Select an Acting Officer (Required)
                                 </option>
                                 {/* ... rest of the options ... */}{loading ? (
                                     <option disabled>Loading officers...</option>
@@ -360,7 +359,7 @@ function ApplyLeave() {
                                         : isAdmin
                                             ? "Choose an active employee in your division to act for you during your leave."
                                             : isSenior
-                                                ? "Optionally choose an Acting Officer from your division."
+                                                ? "Select an Acting Officer from your division."
                                                 : "Select an Acting Officer to handle your duties while on leave."}
                             </p>
                         </div>
@@ -383,7 +382,7 @@ function ApplyLeave() {
                             disabled={
                                 isSubmitting || 
                                 loading || 
-                                (!['admin', 'hod', 'secretary', 'executive_officer'].includes(currentUser?.role) && !formData.actingOfficer)
+                                !formData.actingOfficer
                             }
                             className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-teal-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >

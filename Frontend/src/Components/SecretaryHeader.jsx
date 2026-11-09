@@ -79,7 +79,6 @@ function SecretaryHeader({ activeTab, onMenuToggle }) {
               {activeTab === "dashboard" && "Secretary Dashboard"}
               {activeTab === "all-leaves" && "All Leave Records"}
               {activeTab === "pending" && "Pending Approvals"}
-              {activeTab === "acting-approvals" && "Acting Approvals"}
               {activeTab === "apply-leave" && "Apply for Leave"}
               {activeTab === "my-leaves" && "My Leaves"}
               {activeTab === "reports" && "Reports"}

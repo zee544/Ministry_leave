@@ -7,6 +7,7 @@ function SignatureUpload({
   required = false,
   showError = false,
   onErrorChange,
+  onSignatureChange,
 }) {
   const { getSignature, saveSignature, removeSignature } = useSignatures();
   const [preview, setPreview] = useState(null);
@@ -113,6 +114,11 @@ function SignatureUpload({
       saveSignature(signatureKey, compressedDataUrl);
       setPreview(compressedDataUrl);
       if (onErrorChange) onErrorChange(false);
+      if (onSignatureChange) {
+        Promise.resolve(onSignatureChange(compressedDataUrl)).catch((err) =>
+          console.error("Failed to save uploaded signature:", err)
+        );
+      }
     } catch (err) {
       console.error("Failed to process image:", err);
       alert("Failed to process image. Please try a different image.");
@@ -125,6 +131,11 @@ function SignatureUpload({
     removeSignature(signatureKey);
     setPreview(null);
     if (onErrorChange) onErrorChange(true);
+    if (onSignatureChange) {
+      Promise.resolve(onSignatureChange(null)).catch((err) =>
+        console.error("Failed to remove saved signature:", err)
+      );
+    }
   };
 
   return (

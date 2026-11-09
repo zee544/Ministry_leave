@@ -302,7 +302,7 @@ function AdminDashboard() {
                 className="flex items-center justify-center px-2.5 py-1.5 bg-green-500 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors shadow-sm"
                 title="Pre-Approve and forward to HOD"
               >
-                <span>Approve</span>
+                <span>Pre-approve</span>
               </button>
               <button
                 onClick={() => askDecline(item)}
@@ -665,14 +665,14 @@ function AdminDashboard() {
         tone={confirmModal.action === "approve" ? "approve" : "decline"}
         requireReason={confirmModal.action === "decline"}
         title={confirmModal.action === "approve"
-          ? "Approve this leave request?"
+          ? "Pre-approve this leave request?"
           : "Decline this leave request?"}
         message={confirmModal.leave
           ? confirmModal.action === "approve"
             ? `You are about to PRE-APPROVE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}). It will be forwarded to HOD for final approval.`
             : `You are about to DECLINE ${confirmModal.leave.employee}'s ${confirmModal.leave.type} leave (${confirmModal.leave.from} to ${confirmModal.leave.to}).`
           : ""}
-        confirmLabel={confirmModal.action === "approve" ? "Yes, Approve" : "Yes, Decline"}
+        confirmLabel={confirmModal.action === "approve" ? "Yes, Pre-approve" : "Yes, Decline"}
         cancelLabel="Cancel"
         reasonLabel="Reason for declining (optional)"
         reasonPlaceholder="Explain why you are declining this leave..."

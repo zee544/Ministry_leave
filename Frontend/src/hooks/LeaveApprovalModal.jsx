@@ -243,9 +243,14 @@ export default function LeaveApprovalModal({
     approverRoleLower.includes("head");
 
   const isSecretaryFinalized =
+    Boolean(
+      selectedLeave?.secretaryDecidedById ??
+      selectedLeave?.secretary_decided_by_id
+    ) ||
     approverRoleLower === "secretary" ||
     approvedByLower === "secretary" ||
-    approvedByLower.includes("secretary");
+    approvedByLower.includes("secretary") ||
+    String(declinedBy).toLowerCase() === "secretary";
 
   const isFinalApprovedBySenior =
     isHodFinalized || isSecretaryFinalized;
@@ -261,7 +266,6 @@ export default function LeaveApprovalModal({
 
   const adminHasSigned =
     !isAdminLeave &&
-    !isSecretaryFinalized &&
     (
       (isAdminFinalized && approverRoleLower === "admin") ||
       declinedBy === "Admin" ||
@@ -269,7 +273,7 @@ export default function LeaveApprovalModal({
       status === "Admin Approved" ||
       selectedLeave?.adminApproved === true ||
       selectedLeave?.recommendedByAdmin === true ||
-      selectedLeave?.recommended_by_admin === 1 ||
+      Number(selectedLeave?.recommendedByAdmin ?? selectedLeave?.recommended_by_admin) === 1 ||
       selectedLeave?.adminSignature ||
       selectedLeave?.admin_signature ||
       String(adminApprovedOnValue).trim() !== ''
@@ -277,11 +281,9 @@ export default function LeaveApprovalModal({
 
   // ✅ FIX: HOD / Senior / Secretary signed if approved or declined
   const hodHasSigned =
-    isFinalApprovedBySenior ||
+    isHodFinalized ||
     declinedBy === "HOD" ||
-    declinedBy === "hod" ||
-    declinedBy === "Secretary" ||
-    declinedBy === "secretary";
+    declinedBy === "hod";
 
   const isActingConfirmed = hasActingOfficer && (
     selectedLeave?.actingOfficerConfirmed === true ||
@@ -378,8 +380,9 @@ export default function LeaveApprovalModal({
   ].filter(Boolean);
 
   let hodSignature =
-    selectedLeave?.approverSignature ||
-    selectedLeave?.approver_signature ||
+    (isSecretaryFinalized && approverRoleLower === "secretary"
+      ? null
+      : selectedLeave?.approverSignature || selectedLeave?.approver_signature) ||
     selectedLeave?.hodSignature ||
     selectedLeave?.hod_signature ||
     null;
@@ -412,6 +415,21 @@ export default function LeaveApprovalModal({
     selectedLeave?.approvedOn ||
     selectedLeave?.approved_on ||
     (hodHasSigned ? new Date().toISOString().split("T")[0] : "");
+
+  const secretaryName =
+    selectedLeave?.secretaryName ||
+    selectedLeave?.secretary_name ||
+    (isSecretaryFinalized && approverRoleLower === "secretary" ? approvedBy : "") ||
+    "";
+  const secretarySignature =
+    selectedLeave?.secretarySignature ||
+    selectedLeave?.secretary_signature ||
+    null;
+  const secretaryHasSigned = isSecretaryFinalized;
+  const secretarySignedDate =
+    selectedLeave?.secretaryDecidedAt ||
+    selectedLeave?.secretary_decided_at ||
+    (secretaryHasSigned ? selectedLeave?.approvedOn || selectedLeave?.appliedOn || "" : "");
 
   const SignatureImg = ({ src, name = "", isSigned = false, date = "", className = "" }) => {
     if (isSigned && src) {
@@ -644,12 +662,21 @@ export default function LeaveApprovalModal({
 
                   <div className="col-span-3 p-0.5 text-center flex flex-col justify-end">
                     <SignatureImg
-                      src={hodSignature}
-                      name={approvedBy || (isSecretaryFinalized ? "Secretary" : "Head of Dept")}
-                      isSigned={hodHasSigned}
-                      date={hodHasSigned ? hodSignedDate : ""}
+                      src={isSecretaryFinalized ? secretarySignature : hodSignature}
+                      name={
+                        isSecretaryFinalized
+                          ? secretaryName || approvedBy || "Secretary"
+                          : approvedBy || "Head of Dept"
+                      }
+                      isSigned={isSecretaryFinalized ? secretaryHasSigned : hodHasSigned}
+                      date={isSecretaryFinalized ? secretarySignedDate : hodSignedDate}
                       className="w-full mb-0.5"
                     />
+                    {isSecretaryFinalized && secretaryName && (
+                      <p className="text-[8px] font-semibold leading-tight text-[#0000FF]">
+                        {secretaryName}
+                      </p>
+                    )}
                     <div className="text-[9px] font-bold leading-tight print-sinhala-tamil-english print-signature-label">
                       <p>දෙපාර්තමේන්තු ප්‍රධානියා{isSecretaryFinalized ? " / ලේකම්" : ""}</p>
                       <p>திணைக்களத் தலைவர்{isSecretaryFinalized ? " / செயலாளர்" : ""}</p>

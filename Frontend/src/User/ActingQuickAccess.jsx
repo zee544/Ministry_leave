@@ -8,9 +8,21 @@ function ActingQuickAccess({ onReview }) {
 
   useEffect(() => {
     if (currentUser?.id != null) {
-      fetchActingOfficerLeaves();
+      fetchActingOfficerLeaves().catch((error) =>
+        console.warn("Failed to load Acting Approvals Quick Access:", error.message)
+      );
     }
   }, [currentUser?.id, fetchActingOfficerLeaves]);
+
+  useEffect(() => {
+    const refreshAssignments = () => {
+      fetchActingOfficerLeaves({ force: true }).catch((error) =>
+        console.warn("Failed to refresh Acting Approvals Quick Access:", error.message)
+      );
+    };
+    window.addEventListener("leaves:acting-refresh", refreshAssignments);
+    return () => window.removeEventListener("leaves:acting-refresh", refreshAssignments);
+  }, [fetchActingOfficerLeaves]);
 
   if (!currentUser) return null;
 
